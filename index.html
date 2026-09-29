@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Kampung Pos</title>
+<meta name="description" content="Game antar surat cozy di planet kampung Indonesia. Tanpa gagal, tanpa timer.">
+<meta name="theme-color" content="#ff7a3d">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Karla:wght@400;600;700;800&family=Patrick+Hand&display=swap">
+<style>
+  /* Layout: kanvas 3D penuh layar; HUD menempel di sudut dengan safe-area; panel kertas di tengah. */
+  :root {
+    --paper: #fef9ef;
+    --paper-2: #f6ead3;
+    --ink: #3b2a20;
+    --ink-soft: #6e5846;
+    --pos: #ff7a3d;
+    --genteng: #c45a2c;
+    --seng: #3f8f8a;
+    --kayu: #8b5a2b;
+    --f-display: "Bagel Fat One", "Arial Rounded MT Bold", system-ui, sans-serif;
+    --f-ui: "Karla", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --f-hand: "Patrick Hand", "Comic Sans MS", "Chalkboard SE", cursive;
+    --gut: 16px;
+    color-scheme: light;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; overflow: hidden; background: #f4dfc4; color: var(--ink); font-family: var(--f-ui); }
+  :root { padding: 0 !important; }
+  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; outline: none; }
+  button, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--seng); outline-offset: 2px; }
+  .kbd { display: inline-grid; place-items: center; min-width: 1.6em; height: 1.6em; padding: 0 .35em; border-radius: 6px; background: var(--ink); color: var(--paper); font-weight: 800; font-size: .8em; box-shadow: 0 2px 0 #000a; }
+
+  /* ---------- judul */
+  #title { position: fixed; inset: 0; display: grid; place-items: center; padding: var(--gut); background: radial-gradient(ellipse at 50% 30%, #fef9efee, #f6ead3f2 60%, #e9cfa8f5); z-index: 30; overflow-y: auto; }
+  .title-card { width: min(520px, 100%); display: grid; gap: 18px; text-align: center; }
+  .stamp { justify-self: center; width: 96px; height: 96px; background: var(--pos); display: grid; place-items: center; border-radius: 6px;
+           -webkit-mask: radial-gradient(circle 6px at 6px 6px, #0000 98%, #000) -6px -6px / 16px 16px; mask: radial-gradient(circle 6px at 6px 6px, #0000 98%, #000) -6px -6px / 16px 16px; transform: rotate(-6deg); }
+  .stamp span { font-family: var(--f-display); color: var(--paper); font-size: 40px; line-height: 1; }
+  h1 { font-family: var(--f-display); font-weight: 400; font-size: clamp(44px, 11vw, 76px); line-height: .95; margin: 0; color: var(--genteng); letter-spacing: .01em; text-wrap: balance; text-shadow: 0 3px 0 #fff8; }
+  .sub { font-family: var(--f-hand); font-size: 24px; margin: 0; color: var(--ink-soft); }
+  #startForm { display: grid; gap: 10px; background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; padding: 16px; box-shadow: 0 6px 0 var(--ink); text-align: left; }
+  #startForm label { font-weight: 700; font-size: 14px; }
+  #startName { padding: 10px 12px; border: 2px solid var(--ink-soft); border-radius: 10px; background: #fff; }
+  .btn { background: var(--pos); color: #fff; border: 2px solid var(--ink); border-radius: 12px; padding: 12px 18px; font-weight: 800; font-size: 17px; box-shadow: 0 4px 0 var(--ink); transition: transform .08s; }
+  .btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--ink); }
+  .btn.ghost { background: var(--paper); color: var(--ink); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: center; font-size: 14px; color: var(--ink-soft); margin: 0; padding: 0; list-style: none; }
+  .legend li { display: flex; align-items: center; gap: 6px; }
+  .note { font-size: 13px; color: var(--ink-soft); margin: 0; }
+
+  /* ---------- HUD */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  #hud > * { pointer-events: auto; }
+  .chip { background: var(--paper); border: 2px solid var(--ink); border-radius: 12px; box-shadow: 0 3px 0 var(--ink); }
+  #timeChip { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); padding: 6px 12px; display: grid; }
+  #clock { font-family: var(--f-display); font-size: 26px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #phase { font-size: 12px; font-weight: 700; color: var(--ink-soft); letter-spacing: .04em; text-transform: uppercase; }
+  #tools { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); top: calc(12px + env(safe-area-inset-top, 0px)); display: flex; gap: 8px; }
+  #tools button { width: 44px; height: 44px; font-size: 20px; display: grid; place-items: center; padding: 0; }
+  #letterWrap { position: absolute; left: calc(var(--gut) + env(safe-area-inset-left, 0px)); top: calc(78px + env(safe-area-inset-top, 0px)); width: min(300px, calc(100vw - 2 * var(--gut))); display: grid; gap: 8px; }
+  .envelope { position: relative; background: var(--paper); border: 2px solid var(--ink); border-radius: 10px; padding: 14px 14px 12px; box-shadow: 0 4px 0 var(--ink); overflow: hidden; }
+  .envelope::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 7px; background: repeating-linear-gradient(-45deg, var(--pos) 0 10px, var(--paper) 10px 16px, var(--seng) 16px 26px, var(--paper) 26px 32px); }
+  #cardTitle { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--genteng); margin: 2px 0 6px; }
+  .to { font-family: var(--f-hand); font-size: 24px; line-height: 1.05; margin: 0; }
+  .addr { font-family: var(--f-hand); font-size: 18px; color: var(--ink-soft); margin: 2px 0 6px; }
+  .hint { font-size: 13px; line-height: 1.35; margin: 0; padding-top: 6px; border-top: 1.5px dashed #3b2a2044; }
+  #cardEmpty { font-size: 14px; padding: 10px 12px; }
+  #compass { display: flex; align-items: center; gap: 8px; padding: 6px 10px; width: max-content; font-weight: 700; font-size: 14px; }
+  #arrow { width: 22px; height: 22px; display: grid; place-items: center; transition: transform .1s linear; }
+  #prompt { position: absolute; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); padding: 8px 14px; font-weight: 700; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+  #toast { position: absolute; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); padding: 8px 14px; font-weight: 700; background: var(--ink); color: var(--paper); border-radius: 999px; max-width: calc(100vw - 180px); text-align: center; }
+  #bottomBar { position: absolute; right: calc(var(--gut) + env(safe-area-inset-right, 0px)); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: grid; justify-items: end; gap: 8px; }
+  #emojis { display: flex; gap: 4px; padding: 4px; }
+  #emojis button { width: 38px; height: 38px; border: 0; background: transparent; font-size: 20px; border-radius: 8px; }
+  #emojis button:hover { background: var(--paper-2); }
+  #netStatus { font-size: 11px; font-weight: 700; color: var(--ink); background: #fef9efcc; padding: 3px 8px; border-radius: 999px; }
+
+  /* ---------- dialog */
+  #dialog { position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(620px, calc(100vw - 2 * var(--gut))); z-index: 20; background: var(--paper); border: 2px solid var(--ink); border-radius: 14px; box-shadow: 0 5px 0 var(--ink); padding: 16px 18px 12px; cursor: pointer; }
+  #dlgName { position: absolute; top: -14px; left: 16px; background: var(--pos); color: #fff; border: 2px solid var(--ink); border-radius: 8px; padding: 2px 10px; font-weight: 800; font-size: 14px; }
+  #dlgText { font-family: var(--f-hand); font-size: 22px; line-height: 1.25; margin: 4px 0 6px; min-height: 2.5em; }
+  .dlg-more { display: block; text-align: right; font-size: 12px; color: var(--ink-soft); font-weight: 700; }
+
+  /* ---------- sentuh */
+  #touch { position: fixed; inset: 0; pointer-events: none; z-index: 12; }
+  #joy { position: absolute; left: calc(24px + env(safe-area-inset-left, 0px)); bottom: calc(28px + env(safe-area-inset-bottom, 0px)); width: 124px; height: 124px; border-radius: 50%; background: #fef9ef66; border: 2px solid #3b2a2088; pointer-events: auto; display: grid; place-items: center; touch-action: none; }
+  #joyKnob { width: 54px; height: 54px; border-radius: 50%; background: var(--paper); border: 2px solid var(--ink); box-shadow: 0 3px 0 var(--ink); }
+  #lookpad { position: absolute; right: 0; top: 30%; width: 45%; height: 40%; pointer-events: auto; touch-action: none; }
+  .tbtn { position: absolute; pointer-events: auto; width: 68px; height: 68px; border-radius: 50%; border: 2px solid var(--ink); box-shadow: 0 4px 0 var(--ink); font-weight: 800; font-size: 14px; touch-action: none; }
+  #btnJump { right: calc(24px + env(safe-area-inset-right, 0px)); bottom: calc(150px + env(safe-area-inset-bottom, 0px)); background: var(--seng); color: #fff; }
+  #btnAct { right: calc(104px + env(safe-area-inset-right, 0px)); bottom: calc(118px + env(safe-area-inset-bottom, 0px)); background: var(--pos); color: #fff; }
+  body.touch #bottomBar { top: calc(64px + env(safe-area-inset-top, 0px)); bottom: auto; }
+  body.touch #emojis button { width: 34px; height: 34px; font-size: 18px; }
+  body.touch #prompt { bottom: calc(230px + env(safe-area-inset-bottom, 0px)); }
+
+  /* ---------- panel */
+  .panel { position: fixed; inset: 0; z-index: 25; display: grid; place-items: center; padding: var(--gut); background: #3b2a2066; }
+  .sheet { width: min(900px, 100%); max-height: calc(100% - 2 * var(--gut)); overflow: auto; background: var(--paper); border: 2px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink); padding: 18px; display: grid; gap: 12px; }
+  .sheet header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .sheet h2 { font-family: var(--f-display); font-weight: 400; font-size: 28px; margin: 0; color: var(--genteng); }
+  .x { width: 40px; height: 40px; border-radius: 10px; border: 2px solid var(--ink); background: var(--paper-2); font-weight: 800; }
+  #mapCanvas { width: 100%; height: auto; border-radius: 10px; border: 2px solid var(--ink); image-rendering: pixelated; background: #5fb3c4; }
+  #stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .sticker { display: grid; gap: 4px; justify-items: center; padding: 12px 8px; border-radius: 12px; border: 2px dashed #3b2a2055; text-align: center; font-size: 13px; font-weight: 700; color: var(--ink-soft); }
+  .sticker .ico { font-size: 34px; line-height: 1.1; filter: grayscale(1) opacity(.35); }
+  .sticker.got { border: 2px solid var(--ink); background: #fff; color: var(--ink); transform: rotate(-1.5deg); box-shadow: 0 3px 0 var(--ink); }
+  .sticker.got:nth-child(even) { transform: rotate(1.5deg); }
+  .sticker.got .ico { filter: none; }
+  .row { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .row input { width: 20px; height: 20px; accent-color: var(--pos); }
+  .muted { color: var(--ink-soft); font-size: 13px; margin: 0; line-height: 1.45; }
+  #endJson { background: #2b211a; color: #fdeccf; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; padding: 12px; border-radius: 10px; overflow: auto; max-height: 240px; margin: 0; white-space: pre; }
+  #endForm { display: grid; gap: 10px; }
+  #endForm input, #endForm textarea { padding: 10px 12px; border: 2px solid var(--ink-soft); border-radius: 10px; background: #fff; }
+  .btns { display: flex; gap: 10px; flex-wrap: wrap; }
+  .sliders { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; font-weight: 600; }
+  .sliders input { width: 100%; accent-color: var(--pos); }
+  .sub3 { font-family: var(--f-display); font-weight: 400; font-size: 20px; margin: 4px 0 0; color: var(--seng); }
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 5; background: radial-gradient(ellipse at 50% 45%, transparent 55%, rgba(60, 35, 20, 0.28) 100%); }
+  #nogl { position: fixed; inset: auto var(--gut) var(--gut) var(--gut); z-index: 40; padding: 12px; }
+  @media (max-width: 560px) {
+    #letterWrap { top: calc(70px + env(safe-area-inset-top, 0px)); width: min(250px, calc(100vw - 2 * var(--gut))); }
+    .to { font-size: 20px; } .addr { font-size: 16px; } .hint { font-size: 12px; }
+    #emojis { display: none; }
+    #tools button { width: 40px; height: 40px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #arrow { transition: none; } .btn { transition: none; } }
+</style>
+</head>
+<body>
+<canvas id="game" tabindex="0" aria-label="Dunia Kampung Pos"></canvas>
+<div id="vignette" aria-hidden="true"></div>
+<div id="nogl" class="chip" hidden>Browser ini tidak mendukung WebGL2. Coba Chrome atau Safari versi terbaru.</div>
+
+<section id="title">
+  <div class="title-card">
+    <div class="stamp" aria-hidden="true"><span>KP</span></div>
+    <h1>Kampung Pos</h1>
+    <p class="sub">100 Surat Terakhir · Bagian 1</p>
+    <form id="startForm">
+      <label for="startName">Nama kurir</label>
+      <input id="startName" maxlength="20" placeholder="mis. Taufiq" autocomplete="nickname">
+      <button id="btnStart" class="btn" type="submit">Mulai mengantar</button>
+    </form>
+    <ul class="legend">
+      <li><span class="kbd">WASD</span> jalan</li>
+      <li><span class="kbd">Shift</span> lari</li>
+      <li><span class="kbd">Spasi</span> lompat</li>
+      <li><span class="kbd">E</span> bicara / antar</li>
+      <li><span class="kbd">M</span> peta</li>
+      <li><span class="kbd">1–5</span> emoji</li>
+      <li>seret mouse = putar kamera</li>
+      <li>🎮 joystick didukung</li>
+    </ul>
+    <p class="note">Tidak ada gagal, tidak ada timer. Surat nyasar itu bagian dari cerita. Nyalakan suara: musiknya gamelan, angklung, dan keroncong.</p>
+  </div>
+</section>
+
+<div id="hud" hidden>
+  <div id="timeChip" class="chip"><span id="clock">07:00</span><span id="phase">Pagi · Hari 1</span></div>
+  <div id="tools">
+    <button id="btnMap" class="chip" title="Peta (M)" aria-label="Peta">🗺️</button>
+    <button id="btnBook" class="chip" title="Buku stiker (B)" aria-label="Buku stiker">📒</button>
+    <button id="btnSet" class="chip" title="Setelan" aria-label="Setelan">⚙️</button>
+  </div>
+  <div id="letterWrap">
+    <article id="card" class="envelope" hidden>
+      <p id="cardTitle"></p>
+      <p class="to">Kepada: <span id="cardTo"></span></p>
+      <p class="addr" id="cardAddr"></p>
+      <p class="hint" id="cardHint"></p>
+    </article>
+    <p id="cardEmpty" class="chip" hidden></p>
+    <div id="compass" class="chip" hidden>
+      <span id="arrow" aria-hidden="true"><svg width="18" height="18" viewBox="0 0 18 18"><path d="M9 1 L15 15 L9 11.5 L3 15 Z" fill="#ff7a3d" stroke="#3b2a20" stroke-width="1.5" stroke-linejoin="round"/></svg></span>
+      <span id="compassText"></span>
+    </div>
+  </div>
+  <div id="prompt" class="chip" hidden><span class="kbd" id="promptKey">E</span><span id="promptText"></span></div>
+  <div id="toast" hidden></div>
+  <div id="bottomBar">
+    <div id="emojis" class="chip" aria-label="Kirim emoji">
+      <button data-emoji="0" title="1">👋</button><button data-emoji="1" title="2">😊</button><button data-emoji="2" title="3">☕</button><button data-emoji="3" title="4">📮</button><button data-emoji="4" title="5">🐱</button>
+    </div>
+    <span id="netStatus">Ghost: menyambung…</span>
+  </div>
+</div>
+
+<div id="dialog" hidden role="dialog" aria-live="polite">
+  <div id="dlgName"></div>
+  <p id="dlgText"></p>
+  <span class="dlg-more" id="dlgMore">E / klik untuk lanjut</span>
+</div>
+
+<div id="touch" hidden>
+  <div id="lookpad"></div>
+  <div id="joy"><div id="joyKnob"></div></div>
+  <button id="btnJump" class="tbtn">Lompat</button>
+  <button id="btnAct" class="tbtn">E</button>
+</div>
+
+<div id="map" class="panel" hidden>
+  <div class="sheet">
+    <header><h2>Peta Planet Kampung</h2><button class="x" data-close aria-label="Tutup">✕</button></header>
+    <canvas id="mapCanvas" width="880" height="440"></canvas>
+    <p class="muted">Lingkaran oranye = distrik tujuan surat. Titik merah = tujuan persis (bisa dimatikan di Setelan). Planet ini bulat: jalan terus ke satu arah, kamu akan kembali ke Tugu Pos.</p>
+  </div>
+</div>
+
+<div id="book" class="panel" hidden>
+  <div class="sheet">
+    <header><h2>Buku Stiker</h2><button class="x" data-close aria-label="Tutup">✕</button></header>
+    <p id="bookCount" class="muted"></p>
+    <div id="stickers"></div>
+  </div>
+</div>
+
+<div id="settings" class="panel" hidden>
+  <div class="sheet">
+    <header><h2>Setelan</h2><button class="x" data-close aria-label="Tutup">✕</button></header>
+    <label class="row"><input type="checkbox" id="optMarker" checked> Tampilkan penanda tujuan (H)</label>
+    <label class="row"><input type="checkbox" id="optShadow" checked> Bayangan (matikan kalau HP terasa berat)</label>
+    <label class="row"><input type="checkbox" id="optBloom"> Efek cahaya lembut (bloom)</label>
+    <label class="row"><input type="checkbox" id="optMute"> Bisukan semua suara</label>
+    <div class="sliders">
+      <label for="volMusic">Musik</label><input type="range" id="volMusic" min="0" max="1" step="0.05" value="0.8">
+      <label for="volSfx">Efek suara</label><input type="range" id="volSfx" min="0" max="1" step="0.05" value="0.9">
+    </div>
+    <p class="muted">♪ <span id="nowPlaying"></span><br>Musik berganti mengikuti waktu: pagi angklung &amp; suling, siang gamelan slendro, sore kecapi suling, malam keroncong.</p>
+    <h3 class="sub3">🎮 Joystick</h3>
+    <p class="muted" id="padStatus"></p>
+    <p class="muted">Stik kiri jalan · stik kanan kamera · <b>A</b> lompat/lanjut · <b>X</b> atau <b>B</b> bicara/antar · <b>Y</b> peta · <b>Select</b> stiker · <b>Start</b> setelan · <b>RT/RB</b> lari · <b>LT/LB</b> zoom · D-pad emoji</p>
+    <p class="muted">Ghost pemain lain: buka game ini di dua tab untuk mencoba mode lokal. Untuk ghost lintas perangkat, isi <code>config.js</code> dengan URL dan anon key Supabase.</p>
+    <div class="btns"><button id="btnReset" class="btn ghost" type="button">Ulang dari awal</button></div>
+    <div id="resetConfirm" hidden>
+      <p class="muted">Semua surat dan stiker akan hilang dari perangkat ini.</p>
+      <div class="btns"><button id="resetYes" class="btn" type="button">Ya, ulang</button><button id="resetNo" class="btn ghost" type="button">Batal</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="ending" class="panel" hidden>
+  <div class="sheet">
+    <header><h2>Tamat · Bagian 1</h2><button id="endClose" class="x" aria-label="Tutup">✕</button></header>
+    <p class="muted">Sepuluh surat sudah sampai (dengan caranya masing-masing). Tinggalkan pesan: kamu akan jadi NPC "kurir pensiun" yang ditemui pemain berikutnya di tempat kamu berdiri sekarang.</p>
+    <form id="endForm">
+      <label for="endName"><b>Nama</b></label>
+      <input id="endName" maxlength="20">
+      <label for="endMsg"><b>Pesan untuk kurir berikutnya</b></label>
+      <textarea id="endMsg" maxlength="100" rows="2" placeholder="mis. Oyen suka digaruk di dagu."></textarea>
+      <div class="btns"><button class="btn" type="submit">Jadikan aku NPC</button></div>
+    </form>
+    <p id="endStatus" class="muted"></p>
+    <pre id="endJson" hidden></pre>
+    <div class="btns"><button id="endCopy" class="btn ghost" type="button" hidden>Salin NPC JSON</button></div>
+  </div>
+</div>
+
+<script src="./config.js"></script>
+<script>window.KP_CONFIG = window.KP_CONFIG || {}; if (matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');</script>
+<script type="importmap">{ "imports": { "three": "./vendor/three.module.min.js", "three/addons/": "./vendor/addons/" } }</script>
+<script type="module" src="./src/game.js"></script>
+</body>
+</html>
