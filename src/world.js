@@ -65,10 +65,11 @@ export const DISTRICT_DEF = {
   pasar:   { dir: dirLL(14, 235),  r: 13 },
   bukit:   { dir: dirLL(-36, 58),  r: 7 },
   seng:    { dir: dirLL(-40, 178), r: 17 },
+  sawah:   { dir: dirLL(-80, 90),  r: 9 },
 };
-const LAKE = dirLL(-10, 235);
+export const LAKE = dirLL(-10, 235);
 const HILL = DISTRICT_DEF.bukit.dir;
-const ROADS = [['alun', 'pelangi'], ['alun', 'pecinan'], ['alun', 'pasar'], ['pelangi', 'bukit'], ['bukit', 'seng'], ['seng', 'pasar'], ['pecinan', 'seng']];
+export const ROADS = [['alun', 'pelangi'], ['alun', 'pecinan'], ['alun', 'pasar'], ['pelangi', 'bukit'], ['bukit', 'seng'], ['seng', 'pasar'], ['pecinan', 'seng']];
 for (const k in DISTRICT_DEF) DISTRICT_DEF[k].frame = frameAt(DISTRICT_DEF[k].dir);
 
 const angle = (a, b) => Math.acos(THREE.MathUtils.clamp(a.dot(b), -1, 1));
@@ -123,8 +124,10 @@ function lanes(dk) {
     pasar: [[-2, 2, -3, 12], [-9, 9, 3, 5]],
     seng: [[-15, 15, -0.2, 2.2]],
     bukit: [],
-  }[dk];
+    sawah: [],
+  }[dk] || [];
 }
+export function mapColorAt(dir, h = heightAt(dir), jitter = 0.5) { return groundColor(dir, h, jitter); }
 function groundColor(dir, h, jitter) {
   const out = COL.grass.clone().lerp(COL.grass2, vnoise(dir.x * 14, dir.y * 14, dir.z * 14)).lerp(COL.grass3, jitter * 0.35);
   if (h < WATER + 0.35) return COL.sand.clone().offsetHSL(0, 0, (jitter - 0.5) * 0.04);
@@ -486,8 +489,8 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
   }
 
   // ---------------------------------------------------------------- rumah
-  function house(key, dk, x, z, face, o) {
-    const pl = place(dk, x, z, face);
+  function house(key, dk, x, z, face, o, plIn) {
+    const pl = plIn || place(dk, x, z, face);
     const { w, d, h } = o;
     const rise = o.rise ?? 0.9, ov = 0.35;
     const wallC = C(o.wall);
@@ -534,7 +537,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     }
     if (o.sign) signs.push({ text: o.sign, pos: worldOf(pl.base, pl.basis, doorX, h - 0.45, d / 2 + 0.12), basis: pl.basis, color: o.signColor || '#ff7a3d', w: Math.min(w - 0.6, 3.6) });
     spot('door:' + key, pl, [doorX, 0, d / 2 + 1.25]);
-    houses.push({ key, dk, dir: pl.dir.clone(), w, d, wall: o.wall, roof: o.roof });
+    houses.push({ key, dk, dir: pl.dir.clone(), w, d, wall: o.wall, roof: o.roof, lz: pl.basis.lz.clone(), filler: !!plIn });
     return pl;
   }
 
@@ -566,6 +569,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
 
     const ws = house('warung_sri', dk, 12.5, 4.5, [0, 4.5], { w: 5, d: 4, h: 2.6, wall: '#feca57', roof: '#9a5a3a', porch: true, porchH: 2.0, porchRoof: '#8fa3a8', sign: 'WARUNG KOPI', signColor: '#3f8f8a' });
     prop(P.table, ws, [0, 0, 3.0], 0);
+    spots['poi:kopi'] = { pos: worldOf(ws.base, ws.basis, -1.75, 0.8, 3.0), up: ws.basis.up.clone(), face: ws.basis.lz.clone() };
     prop(P.renteng, ws, [-1.6, 1.55, 2.2], 0);
     prop(P.drum, ws, [2.35, 0, 3.6], 0);
     addCollider(ws, [2.35, 0, 3.6], 0.38, 0.38, -1, 0.9, { kind: 'drum' });
@@ -587,6 +591,8 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     const bc = place(dk, 6, -6.5, 30); prop(P.becak, bc); addCollider(bc, [0, 0, 0], 0.7, 1.4, -1, 1.2);
     const vp = place(dk, -5.5, -6.5, -50); prop(P.motor, vp);
     const pr = place(dk, 8.5, 12, [0, 0]); prop(P.posRonda, pr); addCollider(pr, [0, 0, 0], 1.3, 1.1, -1, 0.62, { kind: 'pos_ronda' });
+    spots['poi:kentongan'] = { pos: worldOf(pr.base, pr.basis, 1.0, 0.9, -1.0), up: pr.basis.up.clone(), face: pr.basis.lz.clone() };
+    signs.push({ text: 'POS RONDA RT 03', pos: worldOf(pr.base, pr.basis, 0, 2.05, 1.35), basis: pr.basis, color: '#3f8f4a', w: 2.2, fg: '#fefcf5' });
     for (const [x, z] of [[-5, 4], [5, -3.5], [-4, -4]]) { const b = place(dk, x, z, [0, 0]); prop(P.bangku, b); }
     for (const [x, z] of [[-8.5, 0], [8.5, 0], [0, 8.5], [-3.5, -8.5]]) { const l = place(dk, x, z, [0, 0]); prop(B.lamp, l); lampPositions.push(worldOf(l.base, l.basis, 0, 3.15, 0.62)); }
   }
@@ -661,7 +667,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
       B.porch.add(mat(pl.base, pl.basis, [0, 2.33, 0], [3.0, 0.06, 2.4], 0, 0.12), tarps[i]);
       addCollider(pl, [0, 0, 0.4], 1.2, 0.45, -1, 0.78);
       spot(`door:lapak_${i + 1}`, pl, [0, 0, 1.8]);
-      houses.push({ key: `lapak_${i + 1}`, dk, dir: pl.dir.clone(), w: 3, d: 2.4, wall: tarps[i], roof: tarps[i] });
+      houses.push({ key: `lapak_${i + 1}`, dk, dir: pl.dir.clone(), w: 3, d: 2.4, wall: tarps[i], roof: tarps[i], lz: pl.basis.lz.clone() });
     }
     // dermaga ke danau
     const pier = place(dk, 0, -6, 0);
@@ -698,7 +704,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     spot('poi:warung_senja', wsj, [0, 0, 2.9]);
     const v = place(dk, -1, 5.5, 60); prop(P.vespa, v);
     const bn = place(dk, 3.5, 4.5, 200); prop(P.bangku, bn);
-    houses.push({ key: 'menara', dk, dir: tw.dir.clone(), w: 3, d: 3, wall: '#d9483b', roof: '#fef9ef' });
+    houses.push({ key: 'menara', dk, dir: tw.dir.clone(), w: 3, d: 3, wall: '#d9483b', roof: '#fef9ef', lz: tw.basis.lz.clone() });
   }
 
   // ---------------------------------------------------------------- KAMPUNG ATAP SENG (platforming)
@@ -735,8 +741,347 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     const cr = place(dk, 8.5, 2.2, 20); prop(P.crate, cr); addCollider(cr, [0, 0, 0], 0.47, 0.47, -1, 0.72);
   }
 
-  // ---------------------------------------------------------------- tiang listrik + kabel semrawut
   const cableSegs = [];
+  let lilyN = 0;
+  // ================================================================ DEKORASI: kampung yang terasa dihuni
+  // Prop statis digabung per kluster (1 draw call per kluster, bisa di-cull) supaya dunia ramai tanpa membengkakkan draw call.
+  const dr = rng(777);
+  const occupied = [];                      // [dir, radius m] area yang tidak boleh ditanami pohon acak
+  const occupy = (dir, r) => occupied.push([dir, Math.cos(r / R)]);
+  const isOccupied = (dir) => occupied.some(([d, c]) => d.dot(dir) > c);
+  const decorBk = new Map();
+  const _dv = V3(), _dn = new THREE.Matrix3();
+  // kluster spasial (sel ±32 m): tiap sel satu mesh, jadi yang jauh dari kamera tidak digambar
+  const bucketOf = (p) => { const d = p.clone().normalize(); return `${Math.round(d.x * 1.5)},${Math.round(d.y * 1.5)},${Math.round(d.z * 1.5)}`; };
+  function decor(geo, matrix) {
+    const pos = geo.attributes.position.array, nor = geo.attributes.normal.array, col = geo.attributes.color.array;
+    const key = bucketOf(V3(matrix.elements[12], matrix.elements[13], matrix.elements[14]));
+    let b = decorBk.get(key);
+    if (!b) decorBk.set(key, (b = { p: [], n: [], c: [] }));
+    _dn.getNormalMatrix(matrix);
+    for (let i = 0; i < pos.length; i += 3) {
+      _dv.set(pos[i], pos[i + 1], pos[i + 2]).applyMatrix4(matrix); b.p.push(_dv.x, _dv.y, _dv.z);
+      _dv.set(nor[i], nor[i + 1], nor[i + 2]).applyMatrix3(_dn).normalize(); b.n.push(_dv.x, _dv.y, _dv.z);
+      b.c.push(col[i], col[i + 1], col[i + 2]);
+    }
+  }
+  const rep = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+  const post = (x, z, h, c, w = 0.1) => ({ t: 'box', s: [w, h, w], p: [x, h / 2, z], c });
+  const lite = (parts) => prefab(parts.map((p) => (p.t === 'box' && Math.min(...p.s) < 0.6 ? { ...p, sharp: true } : p)));
+  const PF = {
+    pagar: lite([post(-1, 0, 1.0, '#8b5a2b'), post(1, 0, 1.0, '#8b5a2b'), ...[0.3, 0.68].map((y) => ({ t: 'box', s: [2.1, 0.07, 0.05], p: [0, y, 0.05], c: '#a67b4d' })), ...rep(6, (i) => ({ t: 'box', s: [0.08, 0.82, 0.03], p: [-0.83 + i * 0.33, 0.42, 0], c: i % 2 ? '#b08a5a' : '#c19a68' }))]),
+    pagarPutih: lite([post(-1, 0, 1.05, '#d9cdb5', 0.14), post(1, 0, 1.05, '#d9cdb5', 0.14), ...[0.3, 0.72].map((y) => ({ t: 'box', s: [2.1, 0.08, 0.06], p: [0, y, 0.05], c: '#f4ecdc' })), ...rep(5, (i) => ({ t: 'box', s: [0.07, 0.8, 0.04], p: [-0.8 + i * 0.4, 0.42, 0], c: '#f4ecdc' }))]),
+    beringin: lite([
+      { t: 'cyl', rt: 0.7, rb: 1.2, h: 5.5, p: [0, 2.75, 0], c: '#7a5a3a', seg: 9 },
+      ...rep(9, (i) => { const a = (i / 9) * 6.28, r = 1.7 + (i % 3) * 0.7; return { t: 'cyl', rt: 0.05, rb: 0.08, h: 5.4, p: [Math.cos(a) * r, 2.9, Math.sin(a) * r], c: '#8a6a48', seg: 4 }; }),
+      { t: 'ico', r: 3.1, d: 1, p: [0, 7.4, 0], c: '#356e34' }, { t: 'ico', r: 2.5, d: 1, p: [2.4, 6.7, 0.8], c: '#3f7f3a' }, { t: 'ico', r: 2.5, d: 1, p: [-2.4, 6.6, -0.6], c: '#4d8f42' },
+      { t: 'ico', r: 2.2, d: 1, p: [0.4, 6.4, 2.5], c: '#3a7636' }, { t: 'ico', r: 2.2, d: 1, p: [-0.5, 6.5, -2.6], c: '#448a3e' }, { t: 'ico', r: 1.9, d: 1, p: [0, 9.0, 0], c: '#5c9c4a' }]),
+    flamboyan: lite([
+      { t: 'cyl', rt: 0.22, rb: 0.36, h: 3.2, p: [0, 1.6, 0], c: '#7a5a3a', seg: 7 },
+      { t: 'ico', r: 2.0, d: 1, p: [0, 4.2, 0], sc: [1.5, 0.65, 1.5], c: '#e4502a' }, { t: 'ico', r: 1.5, d: 1, p: [1.6, 3.8, 0.6], sc: [1.3, 0.6, 1.3], c: '#f0703a' },
+      { t: 'ico', r: 1.5, d: 1, p: [-1.5, 3.9, -0.5], sc: [1.3, 0.6, 1.3], c: '#d9483b' }, { t: 'ico', r: 1.1, d: 1, p: [0.2, 4.9, 0.1], c: '#ee5a34' }]),
+    mangga: lite([
+      { t: 'cyl', rt: 0.2, rb: 0.32, h: 2.6, p: [0, 1.3, 0], c: '#6b4a2b', seg: 7 },
+      { t: 'ico', r: 1.7, d: 1, p: [0, 3.5, 0], c: '#3f7f3a' }, { t: 'ico', r: 1.3, d: 1, p: [1.1, 3.1, 0.5], c: '#4d8f42' }, { t: 'ico', r: 1.2, d: 1, p: [-1.0, 3.2, -0.5], c: '#356e34' },
+      ...rep(6, (i) => ({ t: 'sphere', r: 0.11, seg: 6, ring: 4, sc: [0.8, 1.1, 0.8], p: [Math.cos(i * 1.1) * 1.4, 2.6 + (i % 2) * 0.4, Math.sin(i * 1.1) * 1.4], c: i % 2 ? '#f2c94c' : '#9ccc4c' }))]),
+    pisang: lite([
+      { t: 'cyl', rt: 0.1, rb: 0.16, h: 2.0, p: [0, 1.0, 0], c: '#8fb35a', seg: 6 },
+      ...rep(6, (i) => ({ t: 'box', s: [0.42, 0.03, 1.7], p: [Math.cos(i * 1.05) * 0.75, 2.1 - (i % 2) * 0.1, Math.sin(i * 1.05) * 0.75], r3: [0.5 * Math.cos(i * 1.05 + 1.57), -i * 1.05 + 1.57, 0.5 * Math.sin(i * 1.05)], c: i % 2 ? '#5f9c47' : '#74b454' })),
+      { t: 'cyl', rt: 0.06, rb: 0.05, h: 0.4, p: [0.16, 1.5, 0.1], r3: [0, 0, 0.3], seg: 5, c: '#e8c93a' }, { t: 'cyl', rt: 0.06, rb: 0.05, h: 0.36, p: [0.26, 1.45, 0.0], r3: [0, 0, 0.3], seg: 5, c: '#d9bd32' }]),
+    bambu: lite([
+      ...rep(7, (i) => { const a = i * 0.9, r = 0.12 + (i % 3) * 0.15, h = 5 + (i % 4) * 0.9; return { t: 'cyl', rt: 0.05, rb: 0.07, h, p: [Math.cos(a) * r, h / 2, Math.sin(a) * r], r3: [Math.sin(a) * 0.07, 0, -Math.cos(a) * 0.07], c: i % 2 ? '#9bb85a' : '#a8c565', seg: 5 }; }),
+      ...rep(7, (i) => { const a = i * 0.9, r = 0.4 + (i % 3) * 0.2, h = 5 + (i % 4) * 0.9; return { t: 'ico', r: 0.5, d: 0, sc: [1, 0.55, 1], p: [Math.cos(a) * r, h - 0.3, Math.sin(a) * r], c: '#6aa84f' }; })]),
+    kamboja: lite([
+      { t: 'cyl', rt: 0.12, rb: 0.22, h: 1.6, p: [0, 0.8, 0], r3: [0, 0, 0.12], c: '#8a7a68', seg: 6 }, { t: 'cyl', rt: 0.06, rb: 0.1, h: 1.2, p: [0.15, 1.9, 0], r3: [0, 0, -0.5], c: '#8a7a68', seg: 5 },
+      { t: 'ico', r: 1.05, d: 1, p: [0, 2.5, 0], sc: [1.2, 0.7, 1.2], c: '#7fa864' },
+      ...rep(9, (i) => ({ t: 'sphere', r: 0.11, seg: 5, ring: 3, sc: [1, 0.5, 1], p: [Math.cos(i * 0.7) * 0.9, 2.85 + (i % 3) * 0.1, Math.sin(i * 0.7) * 0.9], c: i % 3 ? '#fefcf5' : '#ffc9d9' }))]),
+    sumur: lite([
+      { t: 'cyl', rt: 0.7, rb: 0.75, h: 0.75, p: [0, 0.37, 0], c: '#b9b0a0', seg: 10 }, { t: 'cyl', rt: 0.5, h: 0.04, p: [0, 0.75, 0], c: '#1f1a16', seg: 10 },
+      post(-0.62, 0, 2.2, '#8b5a2b', 0.1), post(0.62, 0, 2.2, '#8b5a2b', 0.1), { t: 'box', s: [1.7, 0.08, 0.18], p: [0, 2.15, 0], c: '#8b5a2b' },
+      { t: 'box', s: [1.8, 0.06, 1.2], p: [0, 2.35, 0], r3: [0.35, 0, 0], c: '#9a5a3a' }, { t: 'box', s: [1.8, 0.06, 1.2], p: [0, 2.35, 0], r3: [-0.35, 0, 0], c: '#9a5a3a' },
+      { t: 'cyl', rt: 0.14, rb: 0.11, h: 0.24, p: [0.35, 0.95, 0.68], c: '#48a6c9', seg: 8 }]),
+    angkringan: lite([
+      { t: 'box', s: [1.9, 0.75, 0.85], p: [0, 0.75, 0], c: '#8b5a2b' }, { t: 'box', s: [1.7, 0.06, 0.8], p: [0, 1.15, 0], c: '#a67b4d' },
+      ...[[-0.9, -0.4], [0.9, -0.4], [-0.9, 0.4], [0.9, 0.4]].map(([x, z]) => post(x, z, 2.1, '#8b5a2b', 0.07)), { t: 'box', s: [2.3, 0.07, 1.5], p: [0, 2.15, 0], r3: [0.1, 0, 0], c: '#48a6c9' },
+      { t: 'cyl', rt: 0.14, rb: 0.2, h: 0.3, p: [-0.5, 1.33, 0], c: '#b9b9b0', seg: 8 }, { t: 'sphere', r: 0.11, p: [0.5, 1.9, 0.2], seg: 8, ring: 6, c: '#ffcf6a' },
+      ...rep(5, (i) => ({ t: 'box', s: [0.16, 0.12, 0.16], p: [0.1 + i * 0.2, 1.27, 0.15], c: ['#f2c94c', '#ff9a9e', '#feca57', '#9ccc4c', '#ff7a3d'][i] })),
+      { t: 'cyl', rt: 0.28, h: 0.06, p: [-0.75, 0.3, 0.48], r3: [Math.PI / 2, 0, 0], c: '#3b302b', seg: 8 }, { t: 'cyl', rt: 0.28, h: 0.06, p: [0.75, 0.3, 0.48], r3: [Math.PI / 2, 0, 0], c: '#3b302b', seg: 8 },
+      { t: 'box', s: [1.4, 0.1, 0.36], p: [0, 0.4, 0.75], c: '#8b5a2b' }]),
+    payung: lite([
+      { t: 'cyl', rt: 0.04, h: 2.3, p: [0, 1.15, 0], c: '#4a3b33', seg: 5 }, { t: 'cone', r: 1.6, h: 0.5, p: [0, 2.3, 0], c: '#d9483b', seg: 10 }, { t: 'cone', r: 1.3, h: 0.4, p: [0, 2.35, 0], c: '#fef9ef', seg: 10 },
+      { t: 'cyl', rt: 0.5, h: 0.05, p: [0, 0.72, 0], c: '#a67b4d', seg: 9 }, { t: 'cyl', rt: 0.05, h: 0.72, p: [0, 0.36, 0], c: '#4a3b33', seg: 5 },
+      ...rep(4, (i) => { const a = i * 1.57 + 0.7; return { t: 'box', s: [0.36, 0.05, 0.36], p: [Math.cos(a) * 0.95, 0.42, Math.sin(a) * 0.95], c: ['#48a6c9', '#d9483b', '#feca57', '#6aa84f'][i] }; }),
+      ...rep(4, (i) => { const a = i * 1.57 + 0.7; return { t: 'box', s: [0.34, 0.5, 0.05], p: [Math.cos(a) * 1.13, 0.66, Math.sin(a) * 1.13], r3: [0, -a + 1.57, 0], c: ['#48a6c9', '#d9483b', '#feca57', '#6aa84f'][i] }; })]),
+    tenda: lite([
+      ...[[-1.3, -0.9], [1.3, -0.9], [-1.3, 0.9], [1.3, 0.9]].map(([x, z]) => post(x, z, 2.2, '#8b5a2b', 0.08)), { t: 'box', s: [3.0, 0.07, 2.2], p: [0, 2.28, 0], r3: [0.14, 0, 0], c: '#ffffff' },
+      { t: 'box', s: [2.4, 0.08, 0.8], p: [0, 0.85, 0.2], c: '#a67b4d' }, { t: 'box', s: [2.3, 0.85, 0.7], p: [0, 0.42, 0.2], c: '#8b5a2b' },
+      ...rep(5, (i) => ({ t: 'sphere', r: 0.16, seg: 7, ring: 5, p: [-0.95 + i * 0.47, 1.05, 0.2], sc: [1, 0.8, 1], c: ['#e8453c', '#feca57', '#6aa84f', '#ff7a3d', '#9a7fb0'][i] }))]),
+    sampah: lite([{ t: 'cyl', rt: 0.28, rb: 0.24, h: 0.8, p: [0, 0.4, 0], c: '#3f8f4a', seg: 8 }, { t: 'cyl', rt: 0.3, h: 0.07, p: [0, 0.83, 0], c: '#2f7a3a', seg: 8 }]),
+    potBesar: lite([{ t: 'cyl', rt: 0.42, rb: 0.3, h: 0.7, p: [0, 0.35, 0], c: '#c45a2c', seg: 9 }, { t: 'ico', r: 0.55, d: 1, p: [0, 1.0, 0], c: '#5f9c47' }, { t: 'sphere', r: 0.08, p: [0.3, 1.2, 0.2], seg: 6, ring: 4, c: '#ff6f7d' }, { t: 'sphere', r: 0.08, p: [-0.25, 1.3, 0.1], seg: 6, ring: 4, c: '#feca57' }]),
+    jerami: lite([{ t: 'cone', r: 1.0, h: 1.7, p: [0, 0.85, 0], c: '#d9b55a', seg: 9 }, { t: 'ico', r: 0.4, d: 1, p: [0, 1.85, 0], sc: [1, 0.7, 1], c: '#e0c06a' }, { t: 'cyl', rt: 0.03, h: 0.5, p: [0, 2.1, 0], c: '#8b5a2b', seg: 4 }]),
+    gubuk: lite([
+      ...[[-1.2, -1.0], [1.2, -1.0], [-1.2, 1.0], [1.2, 1.0]].map(([x, z]) => post(x, z, 1.6, '#8b5a2b', 0.14)), { t: 'box', s: [2.8, 0.12, 2.4], p: [0, 1.5, 0], c: '#a67b4d' },
+      { t: 'box', s: [3.2, 0.08, 1.7], p: [0, 3.05, 0.65], r3: [0.55, 0, 0], c: '#c9a24a' }, { t: 'box', s: [3.2, 0.08, 1.7], p: [0, 3.05, -0.65], r3: [-0.55, 0, 0], c: '#b8923d' },
+      { t: 'box', s: [0.08, 1.7, 0.08], p: [-0.5, 2.3, 0.9], c: '#8b5a2b' }, { t: 'box', s: [0.08, 1.7, 0.08], p: [0.5, 2.3, 0.9], c: '#8b5a2b' },
+      ...rep(4, (i) => ({ t: 'box', s: [1.0, 0.05, 0.08], p: [0, 0.3 + i * 0.32, 1.5], c: '#8b5a2b' }))]),
+    orangOrang: lite([
+      { t: 'box', s: [0.08, 2.2, 0.08], p: [0, 1.1, 0], c: '#8b5a2b' }, { t: 'box', s: [1.5, 0.07, 0.07], p: [0, 1.65, 0], c: '#8b5a2b' }, { t: 'box', s: [0.6, 0.75, 0.2], p: [0, 1.5, 0], c: '#d9483b' },
+      { t: 'sphere', r: 0.26, p: [0, 2.15, 0], c: '#efe3c4', seg: 9, ring: 7 }, { t: 'cone', r: 0.62, h: 0.34, p: [0, 2.5, 0], c: '#d8b56a', seg: 8 }, { t: 'sphere', r: 0.07, p: [0.09, 2.15, 0.23], c: '#1a1410', seg: 5, ring: 4 }, { t: 'sphere', r: 0.07, p: [-0.09, 2.15, 0.23], c: '#1a1410', seg: 5, ring: 4 }]),
+    bendera: lite([{ t: 'cyl', rt: 0.045, rb: 0.07, h: 6.2, p: [0, 3.1, 0], c: '#d8d4c8', seg: 6 }, { t: 'sphere', r: 0.09, p: [0, 6.25, 0], c: '#feca57', seg: 6, ring: 4 }, { t: 'box', s: [1.45, 0.34, 0.03], p: [0.75, 5.85, 0], c: '#d9483b', sharp: true }, { t: 'box', s: [1.45, 0.34, 0.03], p: [0.75, 5.51, 0], c: '#fefcf5', sharp: true }]),
+    gapura: lite([
+      ...[-2.4, 2.4].flatMap((x) => [{ t: 'box', s: [0.75, 0.6, 0.75], p: [x, 0.3, 0], c: '#cfc4ae' }, { t: 'box', s: [0.5, 3.4, 0.5], p: [x, 2.1, 0], c: '#f4ecdc' }, { t: 'box', s: [0.62, 0.3, 0.62], p: [x, 3.9, 0], c: '#d9483b' }]),
+      { t: 'box', s: [5.9, 0.6, 0.55], p: [0, 4.1, 0], c: '#d9483b' }, { t: 'box', s: [5.3, 0.14, 0.62], p: [0, 4.45, 0], c: '#feca57' }, { t: 'box', s: [6.2, 0.14, 0.9], p: [0, 4.6, 0], c: '#2e8b57' }]),
+    gapuraPelangi: lite([...['#d9483b', '#ff7a3d', '#feca57', '#1dd1a1', '#48dbfb', '#9a7fb0'].flatMap((c, k) => rep(14, (i) => { const a = (i / 13) * Math.PI, r = 2.7 - k * 0.14; return { t: 'box', s: [0.16, 0.34, 0.25], p: [Math.cos(a) * r, 0.6 + Math.sin(a) * r, 0], r3: [0, 0, a], c, sharp: true }; })),
+      ...[-2.7, 2.7].map((x) => ({ t: 'box', s: [0.6, 0.6, 0.5], p: [x, 0.3, 0], c: '#cfc4ae' }))]),
+    ayunan: lite([...[-1.4, 1.4].flatMap((x) => [{ t: 'box', s: [0.08, 2.5, 0.08], p: [x, 1.2, 0.5], r3: [-0.2, 0, 0], c: '#d9483b' }, { t: 'box', s: [0.08, 2.5, 0.08], p: [x, 1.2, -0.5], r3: [0.2, 0, 0], c: '#d9483b' }]),
+      { t: 'cyl', rt: 0.05, h: 3.0, p: [0, 2.35, 0], r3: [0, 0, Math.PI / 2], c: '#8a8f8a', seg: 6 }, ...[-0.55, 0.55].flatMap((x) => [{ t: 'box', s: [0.02, 1.7, 0.02], p: [x - 0.18, 1.5, 0], c: '#4a4a4a' }, { t: 'box', s: [0.02, 1.7, 0.02], p: [x + 0.18, 1.5, 0], c: '#4a4a4a' }, { t: 'box', s: [0.5, 0.05, 0.22], p: [x, 0.65, 0], c: '#feca57' }])]),
+    jungkat: lite([{ t: 'box', s: [0.25, 0.5, 0.25], p: [0, 0.25, 0], c: '#8a8f8a' }, { t: 'box', s: [3.0, 0.1, 0.36], p: [0, 0.62, 0], r3: [0, 0, 0.22], c: '#48dbfb' }, { t: 'box', s: [0.06, 0.3, 0.3], p: [-1.35, 0.35, 0], r3: [0, 0, 0.22], c: '#d9483b' }, { t: 'box', s: [0.06, 0.3, 0.3], p: [1.35, 0.9, 0], r3: [0, 0, 0.22], c: '#d9483b' }]),
+    perosotan: lite([...[-0.5, 0.5].map((x) => ({ t: 'box', s: [0.06, 2.1, 0.06], p: [x, 1.05, -0.5], c: '#8a8f8a' })), { t: 'box', s: [1.1, 0.06, 0.7], p: [0, 1.9, -0.45], c: '#ff7a3d' }, { t: 'box', s: [0.9, 0.06, 2.6], p: [0, 0.95, 0.9], r3: [0.72, 0, 0], c: '#48a6c9' }, ...rep(5, (i) => ({ t: 'box', s: [0.9, 0.05, 0.05], p: [0, 0.3 + i * 0.35, -0.95], c: '#8a8f8a' }))]),
+    sepeda: lite([{ t: 'cyl', rt: 0.34, h: 0.03, p: [0, 0.34, 0.6], r3: [0, 0, Math.PI / 2], c: '#2b2622', seg: 12 }, { t: 'cyl', rt: 0.34, h: 0.03, p: [0, 0.34, -0.6], r3: [0, 0, Math.PI / 2], c: '#2b2622', seg: 12 }, { t: 'box', s: [0.04, 0.04, 1.1], p: [0, 0.55, 0], r3: [0.35, 0, 0], c: '#d9483b' }, { t: 'box', s: [0.04, 0.5, 0.04], p: [0, 0.65, -0.25], c: '#d9483b' }, { t: 'box', s: [0.5, 0.03, 0.03], p: [0, 1.0, 0.55], c: '#2b2622' }, { t: 'box', s: [0.14, 0.05, 0.28], p: [0, 0.95, -0.3], c: '#2b2622' }]),
+    kayu: lite(rep(9, (i) => ({ t: 'cyl', rt: 0.11, h: 1.1, p: [-0.5 + (i % 4) * 0.27 + (i > 3 ? 0.13 : 0), 0.12 + Math.floor(i / 4) * 0.2, 0], r3: [0, 0, Math.PI / 2], c: i % 2 ? '#7a5a3a' : '#8b6a45', seg: 6 }))),
+    singa: lite([{ t: 'box', s: [0.9, 0.35, 1.0], p: [0, 0.17, 0], c: '#cfc4ae' }, { t: 'ico', r: 0.45, d: 1, sc: [0.9, 1, 1.15], p: [0, 0.75, 0], c: '#d9483b' }, { t: 'sphere', r: 0.34, p: [0, 1.25, 0.28], c: '#e0523f', seg: 10, ring: 8 }, { t: 'ico', r: 0.3, d: 0, sc: [1.4, 0.7, 0.6], p: [0, 1.28, 0.1], c: '#feca57' }, { t: 'sphere', r: 0.06, p: [0.12, 1.32, 0.58], c: '#fefcf5', seg: 6, ring: 4 }, { t: 'sphere', r: 0.06, p: [-0.12, 1.32, 0.58], c: '#fefcf5', seg: 6, ring: 4 }]),
+    hio: lite([{ t: 'cyl', rt: 0.36, rb: 0.3, h: 0.6, p: [0, 0.3, 0], c: '#a67b1d', seg: 8 }, ...rep(9, (i) => ({ t: 'cyl', rt: 0.012, h: 0.5, p: [-0.16 + (i % 3) * 0.16, 0.85, -0.16 + Math.floor(i / 3) * 0.16], c: '#d9483b', seg: 3 }))]),
+    gong: lite([...[-0.9, 0.9].map((x) => post(x, 0, 2.3, '#8b3a1d', 0.14)), { t: 'box', s: [2.1, 0.14, 0.14], p: [0, 2.3, 0], c: '#8b3a1d' }, { t: 'cyl', rt: 0.6, h: 0.08, p: [0, 1.35, 0], r3: [Math.PI / 2, 0, 0], c: '#d9a92a', seg: 16 }, { t: 'cyl', rt: 0.2, h: 0.12, p: [0, 1.35, 0], r3: [Math.PI / 2, 0, 0], c: '#f0c64a', seg: 10 }, { t: 'box', s: [0.02, 0.9, 0.02], p: [0, 1.85, 0], c: '#4a3b33' }]),
+    teropong: lite([...[[0.25, 0.25], [-0.25, 0.25], [0, -0.3]].map(([x, z]) => ({ t: 'cyl', rt: 0.02, h: 1.3, p: [x * 0.6, 0.62, z * 0.6], r3: [z * 0.3, 0, -x * 0.3], c: '#4a3b33', seg: 4 })), { t: 'cyl', rt: 0.1, rb: 0.075, h: 0.95, p: [0, 1.4, 0], r3: [-1.05, 0, 0], c: '#d8d8d2', seg: 8 }, { t: 'cyl', rt: 0.045, h: 0.2, p: [0, 1.02, -0.4], r3: [-1.05, 0, 0], c: '#2b2622', seg: 6 }]),
+    batu: lite([{ t: 'ico', r: 0.6, d: 1, sc: [1.1, 0.7, 0.9], p: [0, 0.2, 0], c: '#9a978c', flat: true }, { t: 'ico', r: 0.35, d: 1, sc: [1, 0.7, 1], p: [0.6, 0.1, 0.3], c: '#8a877c', flat: true }]),
+    teratai: lite([{ t: 'cyl', rt: 0.4, h: 0.035, p: [0, 0, 0], c: '#4f9a52', seg: 9 }, { t: 'cyl', rt: 0.3, h: 0.04, p: [0.65, 0, 0.35], c: '#5fae5c', seg: 8 }, { t: 'sphere', r: 0.13, seg: 7, ring: 4, sc: [1, 0.6, 1], p: [0.1, 0.1, 0.1], c: '#ff9ad5' }]),
+    rumbia: lite(rep(6, (i) => ({ t: 'cyl', rt: 0.012, rb: 0.03, h: 1.6 + (i % 3) * 0.3, p: [Math.cos(i * 1.1) * 0.25, 0.85, Math.sin(i * 1.1) * 0.25], c: '#7fa85a', seg: 4 })).concat(rep(3, (i) => ({ t: 'cyl', rt: 0.045, h: 0.32, p: [Math.cos(i * 2.1) * 0.25, 1.75 + i * 0.1, Math.sin(i * 2.1) * 0.25], c: '#6b4a2b', seg: 5 })))),
+    karung: lite([{ t: 'box', s: [0.7, 0.3, 0.45], p: [0, 0.15, 0], c: '#c9a24a' }, { t: 'box', s: [0.7, 0.3, 0.45], p: [0.1, 0.45, 0.05], r3: [0, 0.3, 0], c: '#d4b05a' }, { t: 'box', s: [0.65, 0.3, 0.45], p: [0.9, 0.15, 0.1], r3: [0, -0.2, 0], c: '#b8923d' }]),
+    jaringJemur: lite([...[-1.2, 1.2].map((x) => post(x, 0, 2.2, '#8b5a2b', 0.09)), { t: 'box', s: [2.5, 1.2, 0.03], p: [0, 1.4, 0], c: '#a9d0e8' }, ...rep(6, (i) => ({ t: 'sphere', r: 0.06, seg: 5, ring: 4, p: [-1 + i * 0.4, 0.78, 0.03], c: i % 2 ? '#d9483b' : '#feca57' }))]),
+    jemuranIkan: lite([...[-1.0, 1.0].map((x) => post(x, 0, 1.6, '#8b5a2b', 0.08)), ...[1.0, 1.35].map((y) => ({ t: 'box', s: [2.2, 0.04, 0.04], p: [0, y, 0], c: '#8b5a2b' })), ...rep(10, (i) => ({ t: 'box', s: [0.06, 0.3, 0.02], p: [-0.9 + (i % 5) * 0.4, 1.12 + Math.floor(i / 5) * 0.35, 0], c: '#c9d2d4' }))]),
+    pelampung: lite([{ t: 'sphere', r: 0.16, seg: 8, ring: 6, p: [0, 0.16, 0], c: '#d9483b' }, { t: 'cyl', rt: 0.165, rb: 0.165, h: 0.06, p: [0, 0.16, 0], c: '#fefcf5', seg: 8 }]),
+    kandang: lite([{ t: 'box', s: [1.2, 0.7, 0.9], p: [0, 0.75, 0], c: '#a67b4d' }, { t: 'box', s: [1.4, 0.06, 1.1], p: [0, 1.15, 0], r3: [0.2, 0, 0], c: '#8fa3a8' }, ...[-0.5, 0.5].map((x) => post(x, 0.4, 0.4, '#8b5a2b', 0.06)), { t: 'box', s: [0.4, 0.4, 0.04], p: [0, 0.4, 0.46], c: '#5a4a3a' }]),
+    tongBiru: lite([{ t: 'cyl', rt: 0.36, h: 0.9, p: [0, 0.45, 0], c: '#3f7fbf', seg: 9 }, { t: 'cyl', rt: 0.37, h: 0.05, p: [0, 0.6, 0], c: '#2f6aa3', seg: 9 }]),
+    bangkuKayu: lite([{ t: 'box', s: [1.6, 0.08, 0.4], p: [0, 0.45, 0], c: '#8b5a2b' }, { t: 'box', s: [1.6, 0.4, 0.06], p: [0, 0.75, -0.2], r3: [-0.15, 0, 0], c: '#8b5a2b' }, post(-0.7, 0, 0.45, '#8b5a2b', 0.08), post(0.7, 0, 0.45, '#8b5a2b', 0.08)]),
+    lentera: lite([{ t: 'cyl', rt: 0.05, h: 3.0, p: [0, 1.5, 0], c: '#3b302b', seg: 5 }, { t: 'box', s: [0.32, 0.4, 0.32], p: [0, 3.15, 0], c: '#d9483b' }, { t: 'box', s: [0.42, 0.06, 0.42], p: [0, 3.4, 0], c: '#feca57' }]),
+  };
+  const tally = {};
+  const put = (name, pl, o = [0, 0, 0], rotY = 0, s = [1, 1, 1]) => { tally[name] = (tally[name] || 0) + PF[name].attributes.position.count / 3; decor(PF[name], mat(pl.base, pl.basis, o, s, rotY)); };
+  // penempatan pada koordinat lokal distrik dengan arah pandang (derajat dari utara)
+  const at = (dk, x, z, deg = 0) => place(dk, x, z, deg);
+  // pagar dari (x0,z0) ke (x1,z1) di distrik dk
+  function fence(dk, x0, z0, x1, z1, kind = 'pagar') {
+    const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 2));
+    const dx = (x1 - x0) / len, dz = (z1 - z0) / len, deg = Math.atan2(-dz, dx) / D2R;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      put(kind, place(dk, x0 + (x1 - x0) * t, z0 + (z1 - z0) * t, deg), [0, 0, 0], 0, [len / n / 2, 1, 1]);
+    }
+  }
+  // rumbai bendera (tali dengan segitiga berwarna) antara dua titik dunia
+  const buntingTris = [], buntingCol = [];
+  function bunting(a, b, sag = 0.8, n = 12, cols = ['#d9483b', '#fefcf5', '#feca57', '#48dbfb', '#1dd1a1', '#ff9a9e']) {
+    const mid = a.clone().add(b).multiplyScalar(0.5).normalize();
+    const pt = (t) => a.clone().lerp(b, t).addScaledVector(mid, -sag * 4 * t * (1 - t));
+    const across = V3().crossVectors(b.clone().sub(a), mid).normalize().multiplyScalar(0.02);
+    for (let i = 0; i < n; i++) {
+      const t0 = (i + 0.15) / n, t1 = (i + 0.85) / n, p0 = pt(t0), p1 = pt(t1), pm = pt((t0 + t1) / 2).addScaledVector(mid, -0.5);
+      buntingTris.push(p0, p1, pm);
+      const c = C(cols[i % cols.length]);
+      for (let k = 0; k < 3; k++) buntingCol.push(c.r, c.g, c.b);
+    }
+    cableSegs.push(...(() => { const o = []; let pv = a; for (let i = 1; i <= 6; i++) { const q = pt(i / 6); o.push(pv, q); pv = q; } return o; })());
+  }
+
+  // ------------------------------------------------ ALUN-ALUN
+  {
+    const dk = 'alun';
+    const t = place(dk, 0, 0, 0);
+    const br = at(dk, -8.6, 11.2); put('beringin', br);
+    addCollider(br, [0, 0, 0], 1.0, 1.0, -1, 4, { kind: 'pohon' });
+    spots['poi:beringin'] = { pos: worldOf(br.base, br.basis, 2.2, 0, 0.6), up: br.basis.up.clone(), face: br.basis.lz.clone() };
+    put('bangkuKayu', at(dk, -8.6, 8.6, 0)); put('bangkuKayu', at(dk, -11.4, 11.4, 90));
+    occupy(br.dir, 5);
+    for (const sx of [-1, 1]) { const f = at(dk, sx * 5.4, -10.4); put('bendera', f); addCollider(f, [0, 0, 0], 0.15, 0.15, -1, 6); }
+    const ak = at(dk, -8.4, -3.7, 90); put('angkringan', ak); addCollider(ak, [0, 0, 0], 1.0, 0.5, -1, 1.7);
+    signs.push({ text: 'ANGKRINGAN MALAM', pos: worldOf(ak.base, ak.basis, 0, 1.85, 0.67), basis: ak.basis, color: '#8b5a2b', w: 1.7, fg: '#feca57' });
+    const uy = at(dk, 9.2, -14.6, 0); put('sumur', uy); addCollider(uy, [0, 0, 0], 0.8, 0.8, -1, 0.9, { kind: 'drum' });
+    spots['poi:sumur'] = { pos: worldOf(uy.base, uy.basis, 0.2, 0, 1.6), up: uy.basis.up.clone(), face: uy.basis.lz.clone() };
+    occupy(uy.dir, 3);
+    for (const [x, z, r] of [[-2.4, 12.4, 0], [3.4, -12.6, 0], [2.2, 4.2, 0], [-3.8, -2.0, 0], [14.6, 9.5, 0], [-14.8, -2.0, 0]]) put('sampah', at(dk, x, z, r));
+    for (const [x, z] of [[-2.6, -10.6], [2.6, -10.6], [12.6, 1.4], [-12.6, 9], [4.2, 12.5]]) put('potBesar', at(dk, x, z));
+    // payung + meja plastik depan warung kopi, bakso
+    for (const [x, z] of [[9.2, 8.2], [-9.4, 7.4]]) put('payung', at(dk, x, z));
+    put('tenda', at(dk, 8.6, 15.6, 180)); put('tenda', at(dk, -1.8, 15.8, 180));
+    signs.push({ text: 'PASAR MALAM · JUM\'AT', pos: worldOf(place(dk, 8.6, 15.6, 180).base, place(dk, 8.6, 15.6, 180).basis, 0, 2.6, -1.15), basis: place(dk, 8.6, 15.6, 0).basis, color: '#d9483b', w: 2.6, fg: '#fefcf5' });
+    // pagar rendah di sisi timur/barat plaza
+    fence(dk, 15.2, -6.4, 15.2, -3.2, 'pagarPutih'); fence(dk, -15.2, -6.4, -15.2, -2.6, 'pagarPutih');
+    // rumbai bendera: Tugu → tiang lampu
+    const tp = worldOf(t.base, t.basis, 0, 9.4, 0);
+    for (const [x, z] of [[-8.5, 0], [8.5, 0], [0, 8.5], [-3.5, -8.5]]) { const lp = place(dk, x, z, 0); bunting(tp, worldOf(lp.base, lp.basis, 0, 3.3, 0), 1.2, 14); }
+    bunting(worldOf(t.base, t.basis, 0, 3.3, 0).addScaledVector(t.basis.lx, 8.5), worldOf(t.base, t.basis, 0, 3.3, 0).addScaledVector(t.basis.lz, 8.5), 1.0, 10);
+    // gapura selamat datang di jalan menuju Pelangi (utara-selatan jalan alun) dan Pasar
+    for (const [x, z, yaw, txt] of [[0, 19, 0, 'SELAMAT DATANG DI KAMPUNG POS'], [16.45, -9.5, 120, 'HATI-HATI ADA KUCING LEWAT']]) {
+      const g = at(dk, x, z, yaw); put('gapura', g); for (const sx of [-1, 1]) addCollider(g, [sx * 2.4, 0, 0], 0.38, 0.38, -1, 4);
+      signs.push({ text: txt, pos: worldOf(g.base, g.basis, 0, 4.1, 0.29), basis: g.basis, color: '#d9483b', w: 4.4, fg: '#feca57' });
+    }
+  }
+  // ------------------------------------------------ GANG PELANGI
+  {
+    const dk = 'pelangi';
+    for (const sx of [-1, 1]) for (const z of [-7, 0, 7]) fence(dk, sx * 2.9, z, sx * 8.1, z, sx > 0 ? 'pagar' : 'pagarPutih');
+    for (const z of [-15.8, 15.8]) { const g = at(dk, 0, z, 0); put('gapuraPelangi', g); for (const sx of [-1, 1]) addCollider(g, [sx * 2.7, 0, 0], 0.32, 0.28, -1, 1.0); }
+    const ay = at(dk, 6.2, 14.6, 180); put('ayunan', ay); addCollider(ay, [0, 0, 0], 1.6, 0.6, -1, 0.5);
+    const jk = at(dk, -6.4, 14.4, 70); put('jungkat', jk);
+    const ps = at(dk, 3.0, 13.6, -110); put('perosotan', ps); addCollider(ps, [0, 0, 0], 0.6, 0.8, -1, 1.9);
+    for (const [x, z] of [[2.0, -12.6], [-2.0, 5.5]]) put('sepeda', at(dk, x, z, 20));
+    for (const [x, z, r] of [[-2.2, -12.6, 0], [2.3, 6.2, 0]]) put('sampah', at(dk, x, z, r));
+    put('kandang', at(dk, -8.4, 8.6, 0)); put('bangkuKayu', at(dk, 2.4, 1.4, 90));
+    put('pisang', at(dk, 9.2, -13.8)); put('pisang', at(dk, -9.6, -13.6)); put('kamboja', at(dk, -9.4, -1.4)); put('kamboja', at(dk, 9.4, 4.8));
+    signs.push({ text: 'RT 03 · GANG PELANGI', pos: worldOf(place(dk, 0, -15.8, 0).base, place(dk, 0, -15.8, 0).basis, 0, 3.6, 0.2), basis: place(dk, 0, -15.8, 0).basis, color: '#ff7a3d', w: 3.2, fg: '#fefcf5' });
+    signs.push({ text: 'DILARANG PARKIR (KECUALI VESPA PAK RT)', pos: worldOf(place(dk, 2.2, -14, 0).base, place(dk, 2.2, -14, 0).basis, 0, 1.0, 0.9), basis: place(dk, 2.2, -14, 0).basis, color: '#fefcf5', w: 1.8, fg: '#3b2a20' });
+  }
+  // ------------------------------------------------ PECINAN
+  {
+    const dk = 'pecinan';
+    for (const sx of [-1, 1]) { const s = at(dk, sx * 2.6, 12.3, sx * -20); put('singa', s, [0, 0, 0], sx > 0 ? -0.4 : 0.4); addCollider(s, [0, 0, 0], 0.5, 0.5, -1, 1.2); }
+    const hu = at(dk, 0, 11.4, 0); put('hio', hu); addCollider(hu, [0, 0, 0], 0.34, 0.34, -1, 0.6);
+    const go = at(dk, -3.4, 12.6, 90); put('gong', go); addCollider(go, [0, 0, 0], 0.16, 1.0, -1, 2.3);
+    spots['poi:gong'] = { pos: worldOf(go.base, go.basis, 0.5, 0, 0), up: go.basis.up.clone(), face: go.basis.lz.clone() };
+    for (const [x, z] of [[-1.0, 15.4], [1.0, 15.4]]) put('potBesar', at(dk, x, z));
+    for (const z of [-11.5, 11.5]) for (const sx of [-1, 1]) put('lentera', at(dk, sx * 1.9, z));
+    put('tongBiru', at(dk, 2.2, -12.5)); put('sampah', at(dk, -2.3, 6.2));
+    signs.push({ text: 'GONG KEBERUNTUNGAN', pos: worldOf(go.base, go.basis, 0, 2.6, 0), basis: go.basis, color: '#d9483b', w: 1.6, fg: '#feca57' });
+  }
+  // ------------------------------------------------ PASAR
+  {
+    const dk = 'pasar';
+    for (const [x, z, y] of [[-10.6, 2.0, 90], [10.6, 2.4, -90]]) put('tenda', at(dk, x, z, y));
+    put('payung', at(dk, 5.6, 12.4)); put('payung', at(dk, -6.4, 12.4)); put('karung', at(dk, 8.5, 5.8)); put('karung', at(dk, -9.8, 5.5)); put('karung', at(dk, 7.2, 12.4));
+    put('jemuranIkan', at(dk, 10.6, 5.6, -90)); put('jemuranIkan', at(dk, 13.5, 6.6, -90)); put('jaringJemur', at(dk, 8.8, 14.4, 180));
+    fence(dk, 15.0, 6.0, 15.0, 13.0); fence(dk, 8.0, 14.2, 15.0, 14.2);
+    for (let k = 0; k < 7; k++) { const pk = at(dk, 1.15, -2 - k * 2, 0); const lift = (R + WATER + 0.45) - pk.base.length(); if (k % 2 === 0) put('pelampung', pk, [0, lift + 0.3, 0]); }
+    const pc = at(dk, 0.75, -10.0, 0); const lift = (R + WATER + 0.45) - pc.base.length();
+    spots['poi:pancing'] = { pos: worldOf(pc.base, pc.basis, 0, lift, 0), up: pc.basis.up.clone(), face: pc.basis.lz.clone().negate() };
+    for (const [x, z] of [[-4.2, -8.2], [-5.6, -3.6], [4.6, -3.4], [5.8, -12.8]]) put('batu', at(dk, x, z, x * 30));
+    for (const [x, z] of [[-3.4, -1.4], [3.6, -1.6], [-7.2, -1.8], [7.4, -2.4]]) put('rumbia', at(dk, x, z, x * 20));
+    put('bangkuKayu', at(dk, -2.6, 4.4, 0)); put('bangkuKayu', at(dk, 3.0, 4.6, 180));
+    put('sampah', at(dk, 1.6, 3.0)); put('kandang', at(dk, 12.4, 14.6));
+    signs.push({ text: 'PASAR PAGI · JAM 05-10', pos: worldOf(place(dk, -10.6, 2, 90).base, place(dk, -10.6, 2, 90).basis, 0, 2.7, 1.15), basis: place(dk, -10.6, 2, 90).basis, color: '#6aa84f', w: 2.4, fg: '#fefcf5' });
+    signs.push({ text: 'DILARANG MANCING (KECUALI KAMU)', pos: worldOf(pc.base, pc.basis, 1.0, 1.0 + lift, 0.3), basis: pc.basis, color: '#fefcf5', w: 1.6, fg: '#3b2a20' });
+    // teratai di danau
+    for (let n = 0; n < 900 && lilyN < 34; n++) {
+      const a = dr() * 6.28, rr = Math.sqrt(dr()) * 17 / R;
+      const f = frameAt(LAKE);
+      const dir = LAKE.clone().addScaledVector(f.east, Math.cos(a) * rr).addScaledVector(f.north, Math.sin(a) * rr).normalize();
+      const h = heightAt(dir);
+      if (h > WATER - 0.7 || h < WATER - 3.4) continue;
+      if (dir.angleTo(place(dk, 0, -8, 0).dir) * R < 3.4) continue;
+      decor(PF.teratai, new THREE.Matrix4().compose(dir.clone().multiplyScalar(R + WATER + 0.09), new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0), dir).multiply(new THREE.Quaternion().setFromAxisAngle(V3(0, 1, 0), dr() * 6.28)), V3(1, 1, 1).multiplyScalar(0.8 + dr() * 0.7)));
+      lilyN++;
+    }
+  }
+  // ------------------------------------------------ BUKIT
+  {
+    const dk = 'bukit';
+    const bd = at(dk, 4.6, 1.6, 0); put('bendera', bd); addCollider(bd, [0, 0, 0], 0.15, 0.15, -1, 6);
+    const tr = at(dk, -1.8, -1.6, 90); put('teropong', tr); addCollider(tr, [0, 0, 0], 0.3, 0.3, -1, 1.5);
+    spots['poi:teropong'] = { pos: worldOf(tr.base, tr.basis, 0.4, 0, 0.3), up: tr.basis.up.clone(), face: tr.basis.lz.clone() };
+    for (const [x, z, y] of [[-5.9, -0.3, -90], [-5.9, 1.2, -90]]) put('bangkuKayu', at(dk, x, z, y));
+    for (let k = 0; k < 14; k++) { const a = 5.6 - k * 0.36, rr = 25 - k * 1.28; const pp = at(dk, Math.cos(a) * rr * 0.7 + 4, Math.sin(a) * rr * 0.7 - 16, 0); if (k % 3 === 0) { const l = at(dk, Math.cos(a) * rr * 0.7 + 4 + 1.5, Math.sin(a) * rr * 0.7 - 16, 0); put('lentera', l); } put('batu', pp, [0, 0, 0], k); }
+    for (const [x, z] of [[6.2, 5.6], [-6.6, 4.8], [0.6, -5.8], [7.2, -1.2]]) put('batu', at(dk, x, z, x * 40));
+    put('kamboja', at(dk, -4.6, 5.6)); put('kamboja', at(dk, 6.4, 2.8)); put('pisang', at(dk, 2.6, 7.2));
+  }
+  // ------------------------------------------------ KAMPUNG SENG
+  {
+    const dk = 'seng';
+    for (const [x, z, yw] of [[-13.2, 2.6, 30], [-3.2, 3.2, -20], [11.6, 3.4, 80], [1.4, 2.6, 5]]) put('sepeda', at(dk, x, z, yw));
+    put('kayu', at(dk, -14.6, 4.2, 0)); put('kayu', at(dk, 14.4, 3.6, 0)); put('sumur', at(dk, 6.6, 4.1, 0)); addCollider(place(dk, 6.6, 4.1, 0), [0, 0, 0], 0.8, 0.8, -1, 0.9, { kind: 'drum' });
+    for (const [x, z] of [[-9, 3.2], [6, 3.2], [-4, 4.3]]) put('potBesar', at(dk, x, z));
+    for (const [x, z] of [[-16.4, 0.4], [16.6, 0.8], [-15.6, 8.6]]) put('pisang', at(dk, x, z)); put('kamboja', at(dk, -16.2, 4)); put('kamboja', at(dk, 16.2, 5));
+    put('sampah', at(dk, 2.4, 2.0)); put('tongBiru', at(dk, -1.6, 2.0)); put('kandang', at(dk, 13.4, 9.8)); put('kandang', at(dk, -13.4, 9.8));
+    fence(dk, -14.6, 5.6, -11.8, 5.6); fence(dk, 11.4, 5.6, 14.6, 5.6);
+    signs.push({ text: 'AWAS ATAP LICIN', pos: worldOf(place(dk, -13.2, 2.6, 0).base, place(dk, -13.2, 2.6, 0).basis, 0, 1.2, 0.5), basis: place(dk, -13.2, 2.6, 0).basis, color: '#feca57', w: 1.4, fg: '#3b2a20' });
+  }
+  // ------------------------------------------------ SAWAH SELATAN
+  {
+    const dk = 'sawah';
+    const gb = at(dk, 0, 0, 0); put('gubuk', gb); addCollider(gb, [0, 0, 0], 1.7, 1.4, 1.35, 1.65, { kind: 'porch' });
+    spots['poi:sawah'] = { pos: worldOf(gb.base, gb.basis, 0, 0, 2.4), up: gb.basis.up.clone(), face: gb.basis.lz.clone() };
+    signs.push({ text: 'SAWAH BERAS PANDAN WANGI', pos: worldOf(gb.base, gb.basis, 0, 2.6, 1.27), basis: gb.basis, color: '#6aa84f', w: 2.6, fg: '#fefcf5' });
+    for (const [x, z] of [[-5, -4], [5, -3.4], [-4.6, 4.6], [4.6, 4.2]]) put('orangOrang', at(dk, x, z, x * 12));
+    for (const [x, z] of [[-2.8, 3.6], [3.2, 3], [-6.2, 0.6], [6.4, -0.2], [0.8, -4.8]]) put('jerami', at(dk, x, z, x * 20));
+    occupy(gb.dir, 8);
+  }
+  // ------------------------------------------------ rumah-rumah warga di sepanjang jalan antar-distrik
+  {
+    const rr = rng(4242);
+    const wallsF = ['#fef9ef', '#e8d5b0', '#f2c89a', '#c9d8a6', '#9fc7c0', '#ff9a9e', '#feca57', '#a9d0e8', '#f4c6a0', '#d8c9e8'];
+    const roofsF = ['#8fa3a8', '#9a5a3a', '#c45a2c', '#6b7f99', '#8a8f8a', '#3f8f8a', '#b5532a'];
+    const doorsF = ['#8b5a2b', '#3f8f4a', '#d9483b', '#48a6c9', '#6b4a2b'];
+    let count = 0;
+    for (const [ai, bi] of ROADS) {
+      const da = DISTRICT_DEF[ai].dir, db = DISTRICT_DEF[bi].dir;
+      const len = angle(da, db) * R, n = Math.floor(len / 8.2);
+      const nrm = V3().crossVectors(da, db).normalize();
+      for (let k = 1; k < n; k++) for (const side of [-1, 1]) {
+        if (rr() < (quality === 'low' ? 0.5 : 0.32)) continue;
+        const t = (k + (rr() - 0.5) * 0.5) / n;
+        const c = da.clone().lerp(db, t).normalize();
+        const dir = c.clone().addScaledVector(nrm, (side * (6.4 + rr() * 2.4)) / R).normalize();
+        const h = heightAt(dir);
+        if (h < WATER + 1.0 || h > 3.4 || dir.y < -0.9) continue;
+        if (Object.values(DISTRICT_DEF).some((d) => angle(dir, d.dir) * R < d.r + 4.2)) continue;
+        if (angle(dir, LAKE) * R < 17 || isOccupied(dir)) continue;
+        const f = frameAt(dir);
+        const to = c.clone().sub(dir); to.addScaledVector(dir, -to.dot(dir));
+        const yaw = Math.atan2(to.dot(f.east), to.dot(f.north));
+        const pl = placeDir(dir, yaw);
+        const w = 3.8 + rr() * 1.6, d = 3.4 + rr() * 1.2, hh = 2.4 + rr() * 0.9;
+        house(`rumah_${count}`, 'alun', 0, 0, 0, { w, d, h: hh, wall: wallsF[Math.floor(rr() * wallsF.length)], roof: roofsF[Math.floor(rr() * roofsF.length)], door: doorsF[Math.floor(rr() * doorsF.length)], porch: rr() < 0.45, porchH: 2.0, side: rr() < 0.5, rise: 0.7 + rr() * 0.4 }, pl);
+        occupy(dir, 4.5);
+        if (rr() < 0.55) put(rr() < 0.5 ? 'pagar' : 'pagarPutih', placeDir(dir.clone().addScaledVector(pl.basis.lz, (d / 2 + 2.6) / R).normalize(), yaw), [0, 0, 0], 0, [1.4, 1, 1]);
+        if (rr() < 0.5) put('potBesar', pl, [w / 2 - 0.4, 0, d / 2 + 0.9]);
+        if (rr() < 0.3) put('pisang', pl, [-w / 2 - 1.2, 0, -0.4]);
+        if (rr() < 0.25) put('sepeda', pl, [-w / 2 - 0.4, 0, d / 2 + 0.6], 0.4);
+        count++;
+      }
+    }
+    // pohon khas kampung tersebar (bukan pohon hutan biasa): pisang, bambu, kamboja, mangga, flamboyan
+    const LQ = quality === 'low' ? 0.55 : 1;
+    const kinds = [['pisang', 46], ['bambu', 16], ['kamboja', 14], ['mangga', 16], ['flamboyan', 9]].map(([n, w]) => [n, Math.round(w * LQ)]);
+    for (const [name, want] of kinds) {
+      let got = 0;
+      for (let n = 0; n < 3000 && got < want; n++) {
+        const dir = V3(dr() * 2 - 1, dr() * 2 - 1, dr() * 2 - 1);
+        if (dir.lengthSq() > 1 || dir.lengthSq() < 0.01) continue;
+        dir.normalize();
+        const h = heightAt(dir);
+        if (h < WATER + 0.5 || dir.y < -0.86 || isOccupied(dir)) continue;
+        if (ROADS.some(([a, b]) => distToArc(dir, DISTRICT_DEF[a].dir, DISTRICT_DEF[b].dir) < 2.8)) continue;
+        if (Object.values(DISTRICT_DEF).some((d) => angle(dir, d.dir) * R < d.r - 1)) continue;
+        if (name === 'bambu' && angle(dir, LAKE) * R > 34) continue;
+        const pl = placeDir(dir, dr() * 6.28), s = 0.8 + dr() * 0.5;
+        put(name, pl, [0, -0.08, 0], 0, [s, s, s]);
+        if (name !== 'pisang') addCollider(pl, [0, 0, 0], 0.3 * s, 0.3 * s, -1, 2.4 * s, { kind: 'pohon' });
+        occupy(dir, name === 'bambu' ? 1.6 : 1.2);
+        got++;
+      }
+    }
+  }
+  // bangun mesh dekorasi (per kluster)
+  const decorMat = softMat({ vertexColors: true, roughness: 0.8 }, 0.24);
+  const decorMeshes = [];
+  let decorTris = 0;
+  for (const [key, b] of decorBk) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(b.n, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(b.c, 3));
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, decorMat);
+    m.name = 'dekor_' + key; m.castShadow = quality !== 'low'; m.receiveShadow = true;
+    scene.add(m); decorMeshes.push(m); decorTris += b.p.length / 9;
+  }
+  if (buntingTris.length) {
+    const g = new THREE.BufferGeometry().setFromPoints(buntingTris);
+    g.setAttribute('color', new THREE.Float32BufferAttribute(buntingCol, 3));
+    g.computeVertexNormals();
+    const m = new THREE.Mesh(g, softMat({ vertexColors: true, side: THREE.DoubleSide }));
+    m.name = 'rumbai_bendera'; scene.add(m);
+  }
+
+  // ---------------------------------------------------------------- tiang listrik + kabel semrawut
   function sag(a, b, s, n = 8) {
     const mid = a.clone().add(b).multiplyScalar(0.5).normalize();
     let prev = a;
@@ -783,6 +1128,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
   const rand = rng(1234);
   const nearDistrict = (dir, pad) => Object.values(DISTRICT_DEF).some((d) => angle(dir, d.dir) * R < d.r + pad);
   const nearRoad = (dir) => ROADS.some(([a, b]) => distToArc(dir, DISTRICT_DEF[a].dir, DISTRICT_DEF[b].dir) < 3.2);
+  const plants = [];                       // untuk peta: pohon & kelapa
   let trees = 0, palms = 0, bushes = 0, rice = 0;
   const maxTrees = quality === 'low' ? 120 : 170, maxBush = quality === 'low' ? 90 : 130;
   for (let n = 0; n < 5000 && (trees < maxTrees || palms < 60 || bushes < maxBush); n++) {
@@ -791,7 +1137,7 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     dir.normalize();
     const h = heightAt(dir);
     if (h < WATER + 0.3 || dir.y < -0.9) continue;
-    if (nearRoad(dir)) continue;
+    if (nearRoad(dir) || isOccupied(dir)) continue;
     const pl = placeDir(dir, rand() * 6.28);
     const s = 0.75 + rand() * 0.6;
     const nearLake = angle(dir, LAKE) * R < 26;
@@ -802,11 +1148,13 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     if ((nearLake || rand() < 0.2) && palms < 60) {
       prop(B.kelapa, pl, [0, -0.1, 0], rand() * 6, null, [s, s * 1.1, s]);
       addCollider(pl, [0, 0, 0], 0.25, 0.25, -1, 3.5, { kind: 'pohon' });
+      plants.push({ dir: pl.dir, r: 1.0 * s, palm: true });
       palms++;
     } else if (trees < maxTrees) {
       prop(B.trunk, pl, [0, -0.1, 0], 0, null, [s, s, s]);
       prop(B.crown, pl, [0, -0.1, 0], rand() * 6, null, [s, s, s]);
       addCollider(pl, [0, 0, 0], 0.25 * s, 0.25 * s, -1, 2.2 * s, { kind: 'pohon' });
+      plants.push({ dir: pl.dir, r: 1.5 * s });
       trees++;
     } else if (bushes < maxBush) { prop(B.bush, pl, [0, 0, 0], 0, null, [s, s, s]); bushes++; }
   }
@@ -865,13 +1213,13 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     if (dir.lengthSq() > 1 || dir.lengthSq() < 0.01) continue;
     dir.normalize();
     const h = heightAt(dir);
-    if (h < WATER + 0.4 || dir.y < -0.93 || onPath(dir)) continue;
+    if (h < WATER + 0.4 || dir.y < -0.93 || onPath(dir) || isOccupied(dir)) continue;
     if (Object.values(DISTRICT_DEF).some((d) => angle(dir, d.dir) * R < d.r * 0.85)) continue;
     const pl = placeDir(dir, rand() * 6.28);
     const sc = 0.7 + rand() * 0.8;
     grass.add(mat(pl.base, pl.basis, [0, -0.02, 0], [sc, sc * (0.8 + rand() * 0.5), sc], rand() * 6.28));
     gN++;
-    if (rand() < 0.12) { flowerB.add(mat(pl.base, pl.basis, [0.25, 0, 0.1], [1, 0.8 + rand() * 0.6, 1], rand() * 6), flowerCols[fN++ % flowerCols.length]); }
+    if (rand() < (quality === 'low' ? 0.05 : 0.11)) { flowerB.add(mat(pl.base, pl.basis, [0.25, 0, 0.1], [1, 0.8 + rand() * 0.6, 1], rand() * 6), flowerCols[fN++ % flowerCols.length]); }
   }
   B.grass = grass; B.flower = flowerB;
 
@@ -1023,24 +1371,34 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
   }
 
   const _cm = new THREE.Matrix4(), _q = new THREE.Quaternion(), _one = V3(1, 1, 1);
-  function updateLife(t, dt, night, focus) {
+  function updateLife(t, dt, night, pl) {
     LOOK.time.value = t;
     cloudGroup.rotation.y = t * 0.004;
     // ayam: jalan pendek, berhenti, mematuk
     chickens.forEach((c, i) => {
       c.t -= dt;
-      if (c.t <= 0) {
+      // kaget: kabur menjauhi kurir yang berlari mendekat
+      if (pl && c.state !== 'flee' && pl.speed > 1.2) {
+        const cp = surfacePoint(c.dir);
+        if (cp.distanceToSquared(pl.pos) < (pl.speed > 5 ? 12 : 5)) {
+          c.state = 'flee'; c.t = 1.1 + rand() * 0.6; c.cluck = 1;
+          const away = cp.clone().sub(pl.pos); away.addScaledVector(c.dir, -away.dot(c.dir)).normalize();
+          c.target = c.dir.clone().addScaledVector(away, (3 + rand() * 2) / R).normalize();
+        }
+      }
+      if (c.state === 'flee' && c.t <= 0) { c.state = 'peck'; c.t = 1 + rand(); }
+      else if (c.state !== 'flee' && c.t <= 0) {
         if (c.state === 'walk') { c.state = 'peck'; c.t = 1 + rand() * 2.5; }
         else { c.state = 'walk'; c.t = 1.5 + rand() * 2.5; const f = frameAt(c.home); c.target = c.home.clone().addScaledVector(f.east, (rand() - 0.5) * 7 / R).addScaledVector(f.north, (rand() - 0.5) * 7 / R).normalize(); }
       }
       const up = c.dir;
-      if (c.state === 'walk') {
+      if (c.state === 'walk' || c.state === 'flee') {
         const to = c.target.clone().sub(c.dir); to.addScaledVector(up, -to.dot(up));
-        if (to.length() * R > 0.2) { to.normalize(); c.heading.lerp(to, 1 - Math.exp(-5 * dt)); c.dir.addScaledVector(c.heading, (0.8 * dt) / R).normalize(); }
+        if (to.length() * R > 0.2) { to.normalize(); c.heading.lerp(to, 1 - Math.exp(-(c.state === 'flee' ? 12 : 5) * dt)); c.dir.addScaledVector(c.heading, ((c.state === 'flee' ? 3.6 : 0.8) * dt) / R).normalize(); }
       }
       c.heading.addScaledVector(c.dir, -c.heading.dot(c.dir)).normalize();
       const lx = V3().crossVectors(c.dir, c.heading).normalize();
-      const pos = surfacePoint(c.dir, c.state === 'walk' ? Math.abs(Math.sin(t * 14 + i)) * 0.04 : 0);
+      const pos = surfacePoint(c.dir, c.state === 'walk' ? Math.abs(Math.sin(t * 14 + i)) * 0.04 : c.state === 'flee' ? Math.abs(Math.sin(t * 22 + i)) * 0.16 : 0);
       const pitch = c.state === 'peck' ? Math.max(0, Math.sin(t * 9 + i)) * 0.7 : 0;
       _cm.makeBasis(lx, c.dir, c.heading).multiply(new THREE.Matrix4().makeRotationX(pitch)).setPosition(pos);
       chickenMesh.setMatrixAt(i, _cm);
@@ -1081,9 +1439,25 @@ export function buildWorld(scene, { quality = 'high' } = {}) {
     pm.instanceMatrix.needsUpdate = true;
   }
 
+  // rute jalan untuk peta & titik jalan warga
+  const roads = ROADS.map(([a, b]) => {
+    const da = DISTRICT_DEF[a].dir, db = DISTRICT_DEF[b].dir, n = Math.max(6, Math.ceil((angle(da, db) * R) / 3));
+    return Array.from({ length: n + 1 }, (_, i) => da.clone().lerp(db, i / n).normalize());
+  });
+  const NODES = {
+    alun: [[0, -10], [0, 10], [10, 0], [-10, 0], [0, -6.5], [6.5, 0], [-6.5, 0], [0, 6.5], [4.5, -9], [-4.5, 9.5], [9, -3], [-9, 3], [4, 4.5], [-4, -5.5]],
+    pelangi: [[0, -13], [0, -7], [0, 0], [0, 7], [0, 13], [0.7, -3.5], [-0.7, 3.5], [0.6, 10]],
+    pecinan: [[0, -13], [0, -6], [0, 0], [0, 6], [0, 10], [0.7, 3], [-0.7, -3]],
+    pasar: [[-7, 4], [-3, 4], [0, 4], [3, 4], [7, 4], [0, 0], [0, 9], [1.2, -3], [0.4, -8], [0.4, -12]],
+    seng: [[-13, 1], [-8, 1], [-3, 1], [2, 1.2], [8, 1], [13, 1], [-6, 3.6], [6, 3.6]],
+    bukit: [[0, 0], [-1, 3], [1.5, 2.6], [-4, 2.5], [3.6, 3.2], [2, -3.6], [-3, -3]],
+    sawah: [[-3, -1.5], [3, -1.5], [0, 3.5], [-4, 2.4], [4, 2.4], [0, -5]],
+  };
+  const walk = {};
+  for (const [dk, list] of Object.entries(NODES)) walk[dk] = list.map(([x, z]) => localDir(dk, x, z));
   return {
-    colliders, spots, houses, meshes, planet, water, lampPositions, setNight, updateBoats, updateLife, clouds: cloudGroup,
-    stats: { trees, palms, bushes, rice, grass: gN, flowers: fN, chickens: chickens.length, houses: houses.length, colliders: colliders.length },
+    colliders, spots, houses, plants, meshes, planet, water, lampPositions, setNight, updateBoats, updateLife, clouds: cloudGroup, roads, walk, decorMeshes, chickens, cloudGroup,
+    stats: { trees, palms, bushes, rice, grass: gN, flowers: fN, chickens: chickens.length, houses: houses.length, colliders: colliders.length, decorTris, decorMeshes: decorMeshes.length, lilies: lilyN, decorBy: tally },
   };
 }
 

@@ -1,9 +1,9 @@
 // Service worker: offline setelah load pertama. Naikkan VERSION tiap rilis.
-const VERSION = 'kp-v1.1.0';
+const VERSION = 'kp-v1.2.0';
 const SHELL = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './src/game.js', './src/world.js', './src/story.js', './src/net.js',
-  './vendor/three.module.min.js', './src/music.js', './src/characters.js', './vendor/addons/geometries/RoundedBoxGeometry.js', './vendor/addons/utils/BufferGeometryUtils.js', './vendor/addons/postprocessing/EffectComposer.js', './vendor/addons/postprocessing/RenderPass.js', './vendor/addons/postprocessing/UnrealBloomPass.js', './vendor/addons/postprocessing/OutputPass.js', './vendor/addons/postprocessing/ShaderPass.js', './vendor/addons/postprocessing/MaskPass.js', './vendor/addons/postprocessing/Pass.js', './vendor/addons/shaders/CopyShader.js', './vendor/addons/shaders/LuminosityHighPassShader.js', './vendor/addons/shaders/OutputShader.js', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
+  './vendor/three.module.min.js', './src/music.js', './src/characters.js', './src/life.js', './src/minimap.js', './src/touch.js', './vendor/addons/geometries/RoundedBoxGeometry.js', './vendor/addons/utils/BufferGeometryUtils.js', './vendor/addons/postprocessing/EffectComposer.js', './vendor/addons/postprocessing/RenderPass.js', './vendor/addons/postprocessing/UnrealBloomPass.js', './vendor/addons/postprocessing/OutputPass.js', './vendor/addons/postprocessing/ShaderPass.js', './vendor/addons/postprocessing/MaskPass.js', './vendor/addons/postprocessing/Pass.js', './vendor/addons/shaders/CopyShader.js', './vendor/addons/shaders/LuminosityHighPassShader.js', './vendor/addons/shaders/OutputShader.js', './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

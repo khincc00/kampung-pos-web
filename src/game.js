@@ -1,12 +1,15 @@
 import * as THREE from 'three';
-import { R, WATER, buildWorld, heightAt, frameAt, latLonOf, DISTRICT_DEF, prefab, softMat, LOOK } from './world.js';
+import { R, WATER, buildWorld, heightAt, frameAt, surfacePoint, DISTRICT_DEF, prefab, softMat, LOOK } from './world.js';
 import { Character } from './characters.js';
 import { Music, trackTitle, TRACK_KEYS } from './music.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RESIDENTS, LETTERS, DISTRICTS, wrongDoorLine, SEED_LEGACY } from './story.js';
+import { RESIDENTS, LETTERS, DISTRICTS, LANDMARKS, wrongDoorLine, SEED_LEGACY } from './story.js';
+import { createLife } from './life.js';
+import { createMaps } from './minimap.js';
+import { initTouch } from './touch.js';
 import { Net, sanitizeText } from './net.js';
 
 const $ = (id) => document.getElementById(id);
@@ -21,6 +24,7 @@ const SAVE_KEY = 'kp.save.v1';
 const canvas = $('game');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowQ, powerPreference: 'high-performance' });
 if (!renderer.capabilities.isWebGL2) $('nogl').hidden = false;
+renderer.info.autoReset = false;
 renderer.setPixelRatio(Math.min(devicePixelRatio, lowQ ? 1.25 : 1.75));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -168,13 +172,13 @@ function radialTex(inner = 'rgba(40,28,20,0.55)', outer = 'rgba(40,28,20,0)') {
   return new THREE.CanvasTexture(cv);
 }
 // bayangan bulat lembut di kaki karakter (1 draw untuk semua)
-const blobMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: radialTex(), transparent: true, depthWrite: false }), 48);
+const blobMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: radialTex(), transparent: true, depthWrite: false }), 96);
 blobMesh.frustumCulled = false; blobMesh.renderOrder = 2;
 scene.add(blobMesh);
 let blobCount = 0;
 const _bm = new THREE.Matrix4();
 function blob(pos, up, size = 0.9) {
-  if (blobCount >= 48) return;
+  if (blobCount >= 96) return;
   const f = frameAt(up);
   _bm.makeBasis(f.east, up, f.north).scale(V3(size, 1, size)).setPosition(pos.clone().addScaledVector(up, 0.03));
   blobMesh.setMatrixAt(blobCount++, _bm);
@@ -185,15 +189,20 @@ const npcs = {};
 for (const [id, r] of Object.entries(RESIDENTS)) {
   const sp = world.spots['door:' + r.house];
   if (!sp) { console.warn('spot hilang', r.house); continue; }
-  const look = { ...r.look, bun: ['rina', 'ling', 'naya'].includes(id) };
-  const ch = new Character(look);
+  const ch = new Character({ ...r.look, act: r.act }, { lod: lowQ ? 0.6 : 0.85 });
   scene.add(ch.root);
   const tag = textSprite(r.name, { size: 26, scale: 0.0085 });
   tag.visible = false;
   scene.add(tag);
-  npcs[id] = { id, ...r, ch, tag, pos: sp.pos.clone(), up: sp.up.clone(), face: sp.face.clone(), look: sp.face.clone(), near: false };
+  npcs[id] = { id, ...r, ch, tag, pos: sp.pos.clone(), up: sp.up.clone(), face: sp.face.clone(), look: sp.face.clone(), heading: sp.face.clone(), walkV: 0, near: false };
   ch.place(sp.pos, sp.up, sp.face);
 }
+
+// ================================================================ kehidupan kampung (warga ramai, hewan, cuaca, titik interaksi)
+const life = createLife({
+  lowQ, scene, world, npcs, textSprite, spawnEmoji: (e, p, u) => spawnEmoji(e, p, u), sfx: (k) => sfx(k), blob: (p, u, s) => blob(p, u, s),
+  toast: (m) => toast(m), say: (sp, lines, done) => say(sp, lines, done), talk: (w) => talkVillager(w), save: () => save(),
+});
 
 // ================================================================ pemain
 const player = {
@@ -214,7 +223,8 @@ cam.sunRef = frameAt(player.pos.clone().normalize()).east;
 // ================================================================ input
 const keys = new Set();
 const pressed = new Set();
-const joy = { x: 0, y: 0, active: false };
+const joy = { x: 0, y: 0, mag: 0, active: false, run: false };
+const auto = { it: null, t: 0 };            // jalan otomatis ke benda yang diketuk
 addEventListener('keydown', (e) => {
   if (e.target.closest && e.target.closest('input,textarea')) return;
   const k = e.key.toLowerCase();
@@ -225,14 +235,14 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 addEventListener('blur', () => keys.clear());
 let drag = null;
-canvas.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, id: e.pointerId }; canvas.setPointerCapture(e.pointerId); if (ui.dialogOpen) advanceDialog(); });
+canvas.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') return; drag = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, id: e.pointerId, wasDialog: ui.dialogOpen }; canvas.setPointerCapture(e.pointerId); if (ui.dialogOpen) advanceDialog(); });
 canvas.addEventListener('pointermove', (e) => {
   if (!drag || drag.id !== e.pointerId) return;
   const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
   drag.x = e.clientX; drag.y = e.clientY;
   rotateCam(-dx * 0.006, dy * 0.004);
 });
-canvas.addEventListener('pointerup', () => { drag = null; });
+canvas.addEventListener('pointerup', (e) => { if (drag && !drag.wasDialog && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) < 5 && !ui.dialogOpen) tapWorld(e.clientX, e.clientY); drag = null; });
 canvas.addEventListener('wheel', (e) => { cam.dist = clamp(cam.dist + e.deltaY * 0.004, 3, 12); }, { passive: true });
 function rotateCam(yaw, pitch) {
   const up = player.pos.clone().normalize();
@@ -240,35 +250,38 @@ function rotateCam(yaw, pitch) {
   cam.pitch = clamp(cam.pitch + pitch, 0.12, 1.1);
   cam.lastDrag = clock.elapsedTime;
 }
-// joystick sentuh
-{
-  const pad = $('joy'), knob = $('joyKnob');
-  let pid = null, cx = 0, cy = 0;
-  pad.addEventListener('pointerdown', (e) => { pid = e.pointerId; pad.setPointerCapture(pid); const r = pad.getBoundingClientRect(); cx = r.left + r.width / 2; cy = r.top + r.height / 2; move(e); });
-  const move = (e) => {
-    if (e.pointerId !== pid) return;
-    let dx = (e.clientX - cx) / 48, dy = (e.clientY - cy) / 48;
-    const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; }
-    joy.x = dx; joy.y = dy; joy.active = true;
-    knob.style.transform = `translate(${dx * 38}px, ${dy * 38}px)`;
-  };
-  pad.addEventListener('pointermove', move);
-  const end = (e) => { if (e.pointerId !== pid) return; pid = null; joy.x = joy.y = 0; joy.active = false; knob.style.transform = ''; };
-  pad.addEventListener('pointerup', end); pad.addEventListener('pointercancel', end);
-  const look = $('lookpad');
-  let lp = null;
-  look.addEventListener('pointerdown', (e) => { lp = { id: e.pointerId, x: e.clientX, y: e.clientY }; look.setPointerCapture(e.pointerId); });
-  look.addEventListener('pointermove', (e) => { if (!lp || lp.id !== e.pointerId) return; rotateCam(-(e.clientX - lp.x) * 0.008, (e.clientY - lp.y) * 0.005); lp.x = e.clientX; lp.y = e.clientY; });
-  look.addEventListener('pointerup', () => { lp = null; });
+// sentuh: joystick melayang + kamera + tombol (lihat touch.js)
+const touch = initTouch({
+  keys, pressed, joy,
+  rotateCam: (yaw, pitch) => rotateCam(yaw, pitch),
+  zoom: (d) => { cam.dist = clamp(cam.dist + d, 3, 12); },
+  onTap: (x, y) => tapWorld(x, y),
+  onManual: () => { auto.it = null; },
+});
+// ketuk benda/warga di layar: interaksi kalau dekat, kalau jauh kurir berjalan otomatis ke sana
+const _sp = V3();
+function tapWorld(x, y) {
+  if (!started) return;
+  if (ui.dialogOpen) return advanceDialog();          // ketuk di mana saja melanjutkan percakapan
+  let best = null, bd = 64;
+  for (const it of interactables(4)) {
+    _sp.copy(it.pos).addScaledVector(it.pos.clone().normalize(), it.kind === 'npc' || it.kind === 'villager' ? 1.0 : 0.5).project(camera);
+    if (_sp.z > 1) continue;
+    const sx = (_sp.x * 0.5 + 0.5) * innerWidth, sy = (-_sp.y * 0.5 + 0.5) * innerHeight;
+    const d = Math.hypot(sx - x, sy - y) - (it.kind === 'npc' ? 24 : 0);   // warga cerita diutamakan
+    if (d < bd) { bd = d; best = it; }
+  }
+  if (!best) return;
+  if (best.pos.distanceTo(player.pos) < 3.2) { auto.it = null; interact(best); }
+  else { auto.it = best; auto.t = 12; toast(`Menuju ${best.label}…`); }
 }
-const tap = (id, k) => $(id).addEventListener('pointerdown', (e) => { e.preventDefault(); pressed.add(k); keys.add(k); setTimeout(() => keys.delete(k), 120); });
-tap('btnJump', ' '); tap('btnAct', 'e');
 
 // ================================================================ musik & suara (mulai setelah klik Mulai)
 let actx = null, music = null, muted = false;
 const vol = { music: 0.8, sfx: 0.9 };
 function sfx(kind) { if (music && !muted) music.sfx(kind); }
 function startAudio() {
+  if (actx) return;
   try {
     actx = new (window.AudioContext || window.webkitAudioContext)();
     music = new Music(actx);
@@ -357,19 +370,24 @@ function completeStage(st, speaker) {
 }
 
 // ================================================================ interaksi
-function interactables() {
+function interactables(reach = 1) {
   const list = [];
   for (const n of Object.values(npcs)) list.push({ kind: 'npc', id: n.id, pos: n.pos, label: n.name });
   for (const k of ['tugu_top', 'kotak_rindu', 'oyen', 'warung_senja']) if (world.spots['poi:' + k]) list.push({ kind: 'poi', id: k, pos: world.spots['poi:' + k].pos, label: { tugu_top: 'Kotak Pos Tugu', kotak_rindu: 'Kotak Surat Rindu', oyen: 'Si Oyen', warung_senja: 'Warung Senja' }[k] });
   if (windLetter.visible && !quest.wind) list.push({ kind: 'item', id: 'surat_angin', pos: world.spots['item:surat_angin'].pos, label: 'Surat yang terbang' });
   for (const g of legacy) list.push({ kind: 'legacy', id: g.name, pos: g.pos, label: g.name, data: g });
+  for (const it of life.interactables(reach)) list.push(it);
   return list;
 }
 let focus = null;
 function findFocus() {
   let best = null, bd = 2.4;
+  const tgt = targetOfStage();
   for (const it of interactables()) {
-    const d = it.pos.distanceTo(player.pos);
+    const raw = it.pos.distanceTo(player.pos);
+    if (raw > 2.4) continue;
+    // tujuan surat & warga cerita diutamakan daripada warga ramai / kucing yang kebetulan lewat
+    const d = raw - (`${it.kind}:${it.id}` === tgt ? 3 : it.kind === 'npc' ? 0.9 : 0);
     if (d < bd) { bd = d; best = it; }
   }
   return best;
@@ -392,8 +410,10 @@ function interact(it) {
   if (it.kind === 'npc') {
     const n = npcs[it.id];
     if (quest.has && quest.card) return say(n.name, wrongDoorLine(n, { ...quest.card, id: L.id }));
-    return say(n.name, n.idle);
+    return say(n.name, nightness(time.hour) > 0.6 && n.night ? [...n.night] : [...n.idle].sort(() => Math.random() - 0.5).slice(0, 2));
   }
+  if (it.kind === 'villager') return talkVillager(it.data);
+  if (it.kind === 'cat' || it.kind === 'act') { life.interact(it); return; }
   if (it.kind === 'poi') {
     const flavor = {
       tugu_top: ['Kotak pos kecil di alas Tugu. Kosong, untuk sekarang.'],
@@ -403,6 +423,16 @@ function interact(it) {
     };
     return say('', flavor[it.id]);
   }
+}
+
+// warga ramai: obrolan acak + petunjuk arah kalau kurir sedang membawa surat
+function talkVillager(w) {
+  const d = w.def;
+  const night = nightness(time.hour) > 0.6;
+  const lines = [night ? d.night[Math.floor(Math.random() * d.night.length)] : d.lines[Math.floor(Math.random() * d.lines.length)]];
+  if (quest.has && quest.card && Math.random() < 0.6) lines.push(`Cari ${quest.card.to}? Coba ke ${DISTRICTS[quest.card.district].short}.`);
+  w.ch.startWave();
+  say(`${d.name} · ${d.role}`, lines);
 }
 
 // ================================================================ UI
@@ -446,7 +476,7 @@ function renderCard() {
   $('cardAddr').textContent = c.address;
   $('cardHint').textContent = c.hint;
 }
-function openPanel(id) { for (const p of ['map', 'book', 'settings']) $(p).hidden = p !== id || !$(p).hidden; if (id === 'map' && !$('map').hidden) drawMap(); if (id === 'book' && !$('book').hidden) renderBook(); }
+function openPanel(id) { for (const p of ['map', 'book', 'settings']) $(p).hidden = p !== id || !$(p).hidden; if (id === 'map' && !$('map').hidden) { mapOpen(); sfx('ui'); } if (id === 'book' && !$('book').hidden) renderBook(); }
 $('btnMap').onclick = () => openPanel('map');
 $('btnBook').onclick = () => openPanel('book');
 $('btnSet').onclick = () => openPanel('settings');
@@ -477,45 +507,90 @@ $('btnReset').onclick = () => { $('resetConfirm').hidden = false; };
 $('resetNo').onclick = () => { $('resetConfirm').hidden = true; };
 $('resetYes').onclick = () => { try { localStorage.removeItem(SAVE_KEY); } catch {} location.reload(); };
 
-// peta (equirectangular, piksel)
-const mapBase = document.createElement('canvas');
-mapBase.width = 240; mapBase.height = 120;
-{
-  const g = mapBase.getContext('2d');
-  const img = g.createImageData(240, 120);
-  for (let y = 0; y < 120; y++) for (let x = 0; x < 240; x++) {
-    const lat = 90 - (y + 0.5) * 1.5, lon = (x + 0.5) * 1.5 - 180;
-    const la = lat * Math.PI / 180, lo = lon * Math.PI / 180;
-    const d = V3(Math.cos(la) * Math.cos(lo), Math.sin(la), Math.cos(la) * Math.sin(lo));
-    const h = heightAt(d);
-    let c = h < WATER ? [95, 179, 196] : h > 6 ? [134, 168, 87] : h > 3 ? [143, 176, 90] : [163, 191, 104];
-    if (lat < -67) c = (Math.floor((lo + Math.PI) * 14) % 3) ? [127, 174, 79] : [143, 184, 168];
-    const i = (y * 240 + x) * 4;
-    img.data.set([...c, 255], i);
-  }
-  g.putImageData(img, 0, 0);
+// ================================================================ peta: minimap bulat + peta bola besar (seret / zoom / ditemukan)
+const maps = createMaps(world);
+const discovered = new Set();
+const miniCv = $('miniCanvas'), bigCv = $('mapCanvas');
+miniCv.width = miniCv.height = lowQ ? 144 : 184;
+const miniView = { c: V3(0, 1, 0), u: V3(1, 0, 0), k: 100 };
+const mapV = { c: V3(0, 1, 0), u: V3(1, 0, 0), k: 270 };
+const mapUI = { follow: false, hover: null, acc: 0 };
+const landmarkDone = () => LANDMARKS.filter((L) => discovered.has(L.id)).length;
+function npcDots() {
+  const out = [];
+  for (const n of Object.values(npcs)) out.push({ dir: n.pos.clone().normalize(), color: RESIDENTS[n.id].look.shirt, big: true });
+  for (const w of life.walkers) if (w.active && w.fade > 0.5) out.push({ dir: w.dir, color: w.def.look.shirt, big: false });
+  return out;
 }
-const toMap = (dir, W, H) => { const { lat, lon } = latLonOf(dir); return [((lon + 180) / 360) * W, ((90 - lat) / 180) * H]; };
-function drawMap() {
-  const cv = $('mapCanvas');
-  const W = cv.width, H = cv.height;
-  const g = cv.getContext('2d');
-  g.imageSmoothingEnabled = false;
-  g.drawImage(mapBase, 0, 0, W, H);
-  for (const h of world.houses) { const [x, y] = toMap(h.dir, W, H); g.fillStyle = h.roof; g.fillRect(x - 3, y - 3, 6, 6); g.strokeStyle = 'rgba(59,42,32,0.6)'; g.strokeRect(x - 3, y - 3, 6, 6); }
-  g.font = '700 13px Karla, system-ui, sans-serif'; g.textAlign = 'center';
-  for (const [k, d] of Object.entries(DISTRICT_DEF)) {
-    const [x, y] = toMap(d.dir, W, H);
-    const isT = quest.card && quest.card.district === k;
-    if (isT) { g.strokeStyle = '#ff7a3d'; g.lineWidth = 3; g.beginPath(); g.arc(x, y, 22, 0, Math.PI * 2); g.stroke(); }
-    g.fillStyle = '#3b2a20'; g.fillText(DISTRICTS[k].short, x, k === 'alun' ? y + 30 : y - 16);
-  }
+function mapState(mini) {
   const tp = targetPos(targetOfStage());
-  if (showMarker && tp) { const [x, y] = toMap(tp.clone().normalize(), W, H); g.fillStyle = '#d9483b'; g.beginPath(); g.arc(x, y, 5, 0, Math.PI * 2); g.fill(); }
-  const [px, py] = toMap(player.pos.clone().normalize(), W, H);
-  g.fillStyle = '#ff7a3d'; g.strokeStyle = '#3b2a20'; g.lineWidth = 2;
-  g.beginPath(); g.arc(px, py, 7, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.fillStyle = '#3b2a20'; g.fillText('Kamu', px, py - 11);
+  const cardD = quest.card ? DISTRICT_DEF[quest.card.district] : null;
+  const targetDir = quest.has ? (showMarker && tp ? tp.clone().normalize() : cardD?.dir || null) : (currentLetter() ? npcs.harjo.pos.clone().normalize() : null);
+  return { mini, t: clock.elapsedTime, player: { dir: player.pos.clone().normalize(), fwd: player.fwd }, targetDir, targetDistrict: quest.card?.district, discovered, hover: mapUI.hover, npcs: npcDots() };
+}
+const northOf = (dir) => { const n = V3(0, 1, 0).addScaledVector(dir, -dir.y); return n.lengthSq() < 1e-3 ? V3(1, 0, 0).addScaledVector(dir, -dir.x).normalize() : n.normalize(); };
+let miniLast = null;
+function drawMini() {
+  const dir = player.pos.clone().normalize(), u = cam.f.clone().addScaledVector(dir, -cam.f.dot(dir)).normalize();
+  if (!miniLast || miniLast.c.angleTo(dir) * R > 0.45 || miniLast.u.angleTo(u) > 0.03) { miniLast = { c: dir, u }; }
+  miniView.c.copy(miniLast.c); miniView.u.copy(miniLast.u); miniView.k = (miniCv.width / 2) / Math.sin(34 / R);
+  maps.draw(miniCv, miniView, mapState(true));
+}
+function drawBig() {
+  if (mapUI.follow) maps.centerOn(mapV, player.pos.clone().normalize(), cam.f);
+  maps.draw(bigCv, mapV, mapState(false));
+}
+function renderLegend() {
+  const ul = $('mapLegend'); ul.innerHTML = '';
+  for (const L of LANDMARKS) { const li = document.createElement('li'); const f = discovered.has(L.id); li.className = f ? '' : 'lock'; li.textContent = f ? `${L.icon} ${L.label}` : '❔ ???'; ul.append(li); }
+  $('mapCaption').textContent = `Ditemukan ${landmarkDone()} dari ${LANDMARKS.length} tempat`;
+}
+function mapOpen() {
+  mapV.k = bigCv.width * 0.5 * 0.96;
+  const dir = player.pos.clone().normalize();
+  maps.centerOn(mapV, dir, mapUI.follow ? cam.f : northOf(dir));
+  renderLegend(); drawBig();
+}
+const clampK = () => { mapV.k = clamp(mapV.k, bigCv.width * 0.3, bigCv.width * 2.4); };
+$('mapMe').onclick = () => { const d = player.pos.clone().normalize(); maps.centerOn(mapV, d, mapUI.follow ? cam.f : northOf(d)); drawBig(); };
+$('mapHome').onclick = () => { maps.centerOn(mapV, V3(0, 1, 0), V3(1, 0, 0)); drawBig(); };
+$('mapTarget').onclick = () => { const st = mapState(false); if (!st.targetDir) return toast('Belum ada tujuan. Ambil surat dulu.'); maps.centerOn(mapV, st.targetDir, northOf(st.targetDir)); mapV.k = Math.max(mapV.k, bigCv.width * 0.9); drawBig(); };
+$('mapFollow').onclick = (e) => { mapUI.follow = !mapUI.follow; e.currentTarget.setAttribute('aria-pressed', mapUI.follow); e.currentTarget.classList.toggle('on', mapUI.follow); drawBig(); };
+$('mapZoomIn').onclick = () => { mapV.k *= 1.35; clampK(); drawBig(); };
+$('mapZoomOut').onclick = () => { mapV.k /= 1.35; clampK(); drawBig(); };
+{
+  const ptrs = new Map(); let pinch = 0, moved = 0;
+  const toCv = (e) => { const r = bigCv.getBoundingClientRect(); return [(e.clientX - r.left) * (bigCv.width / r.width), (e.clientY - r.top) * (bigCv.height / r.height)]; };
+  bigCv.addEventListener('pointerdown', (e) => { bigCv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY }); moved = 0; if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); } });
+  bigCv.addEventListener('pointermove', (e) => {
+    const p = ptrs.get(e.pointerId);
+    if (!p) { const [x, y] = toCv(e); const L = maps.hitLandmark(bigCv, mapV, x, y); const id = L && discovered.has(L.id) ? L.id : null; if (id !== mapUI.hover) { mapUI.hover = id; drawBig(); } return; }
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY; moved += Math.abs(dx) + Math.abs(dy);
+    if (ptrs.size >= 2) { const [a, b] = [...ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y); if (pinch) { mapV.k *= d / pinch; clampK(); } pinch = d; }
+    else { const r = bigCv.getBoundingClientRect(); const f = bigCv.width / r.width; maps.rotateView(mapV, dx * f, dy * f); mapUI.follow = false; $('mapFollow').classList.remove('on'); $('mapFollow').setAttribute('aria-pressed', 'false'); }
+    drawBig();
+  });
+  const up = (e) => {
+    const had = ptrs.delete(e.pointerId); pinch = 0;
+    if (had && moved < 8 && e.type === 'pointerup') {
+      const [x, y] = toCv(e), L = maps.hitLandmark(bigCv, mapV, x, y);
+      if (L) { const found = discovered.has(L.id); $('mapCaption').textContent = found ? `${L.icon} ${L.label}` : '❔ Tempat ini belum kamu temukan. Jalan ke sana dulu.'; if (found) { mapUI.hover = L.id; maps.centerOn(mapV, world.spots[L.spot].pos.clone().normalize(), mapV.u); } drawBig(); }
+    }
+  };
+  bigCv.addEventListener('pointerup', up); bigCv.addEventListener('pointercancel', up);
+  bigCv.addEventListener('wheel', (e) => { e.preventDefault(); mapV.k *= e.deltaY < 0 ? 1.12 : 1 / 1.12; clampK(); drawBig(); }, { passive: false });
+}
+$('mini').onclick = () => openPanel('map');
+// tempat baru ditemukan saat kurir mendekat
+let discTimer = 0;
+function checkDiscover(dt) {
+  discTimer -= dt; if (discTimer > 0 || !started) return; discTimer = 0.5;
+  for (const L of LANDMARKS) {
+    if (discovered.has(L.id)) continue;
+    const sp = world.spots[L.spot]; if (!sp || sp.pos.distanceToSquared(player.pos) > L.radius * L.radius) continue;
+    discovered.add(L.id); sfx('coin'); toast(`📍 Tempat baru: ${L.icon} ${L.label}  (${discovered.size}/${LANDMARKS.length})`); save();
+    if (!$('map').hidden) renderLegend();
+  }
 }
 
 // emoji
@@ -532,7 +607,8 @@ function sendEmoji(i) {
   spawnEmoji(e, player.pos, player.pos.clone().normalize());
   net.send('emoji', { e, p: player.pos.toArray() });
 }
-document.querySelectorAll('[data-emoji]').forEach((b) => (b.onclick = () => sendEmoji(+b.dataset.emoji)));
+document.querySelectorAll('[data-emoji]').forEach((b) => (b.onclick = () => { sendEmoji(+b.dataset.emoji); document.body.classList.remove('emoji-open'); }));
+$('btnEmoji').onclick = () => document.body.classList.toggle('emoji-open');
 
 // ================================================================ ghost + warisan
 const net = new Net(cfg);
@@ -604,7 +680,7 @@ $('endClose').onclick = () => { $('ending').hidden = true; };
 
 // ================================================================ simpan
 function saveData() {
-  return { idx: quest.idx, stage: quest.stage, has: quest.has, card: quest.card, stickers: quest.stickers, done: quest.done, name: player.name, hour: time.hour, day: time.day, pos: player.pos.toArray() };
+  return { idx: quest.idx, stage: quest.stage, has: quest.has, card: quest.card, stickers: quest.stickers, done: quest.done, name: player.name, hour: time.hour, day: time.day, pos: player.pos.toArray(), disc: [...discovered], fish: life.stats.fish };
 }
 function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(saveData())); } catch {} }
 function load(d) {
@@ -613,6 +689,7 @@ function load(d) {
   if (quest.idx >= LETTERS.length) { quest.has = false; quest.card = null; }
   if (quest.has && currentLetter()?.stages[quest.stage]?.at === 'item:surat_angin') windLetter.visible = true;
   player.name = sanitizeText(d.name, 20) || 'Kurir';
+  (d.disc || []).forEach((id) => discovered.add(id)); life.setFish(d.fish);
   time.hour = +d.hour || 7; time.day = d.day | 0 || 1;
   if (Array.isArray(d.pos) && d.pos.every(Number.isFinite)) player.pos.fromArray(d.pos);
   return true;
@@ -634,9 +711,18 @@ function stepPlayer(dt) {
     ix = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0) + joy.x;
     iz = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) - joy.y;
     ix += pad.axes[0]; iz -= pad.axes[1];
+    if (auto.it) {
+      const ap = (auto.it.data && auto.it.data.pos) || auto.it.pos;
+      const gd = ap.clone().sub(player.pos); gd.addScaledVector(up, -gd.dot(up));
+      const dist = gd.length();
+      auto.t -= dt;
+      if (joy.active || keys.size || Math.hypot(ix, iz) > 0.2) auto.it = null;
+      else if (dist < 1.6 || auto.t <= 0) { const it = auto.it; auto.it = null; if (dist < 3.4) interact(it); }
+      else { gd.normalize(); ix = gd.dot(right); iz = gd.dot(cam.f); }
+    }
   }
   const il = Math.hypot(ix, iz); if (il > 1) { ix /= il; iz /= il; }
-  const speed = keys.has('shift') || pad.run ? K.RUN : K.WALK;
+  const speed = (keys.has('shift') || pad.run || joy.run || joy.mag > 0.93 ? K.RUN : K.WALK) * life.speedBuff;
   const desired = cam.f.clone().multiplyScalar(iz).addScaledVector(right, ix).multiplyScalar(speed);
   player.vT.addScaledVector(up, -player.vT.dot(up));
   player.vT.lerp(desired, 1 - Math.exp(-(player.grounded ? K.ACC_G : K.ACC_A) * dt));
@@ -830,8 +916,25 @@ function rayHitColliders(a, b) {
 
 // ================================================================ loop
 const clock = new THREE.Clock();
-let netTimer = 0, started = false, hudTimer = 0;
+const isTouchUI = () => document.body.classList.contains('touch');
+function actionVerb(f) {
+  const tgtAt = targetOfStage();
+  const isT = tgtAt === `${f.kind}:${f.id}`;
+  if (f.verb) return f.verb;
+  if (f.kind === 'cat') return 'Elus';
+  if (f.kind === 'npc' && f.id === 'harjo' && !quest.has && currentLetter()) return 'Ambil surat';
+  if (isT) return f.kind === 'item' ? 'Ambil' : currentLetter()?.stages[quest.stage + 1] ? 'Tunjukkan surat' : 'Antar surat';
+  if (f.kind === 'poi' || f.kind === 'item') return 'Lihat';
+  return f.kind === 'villager' ? 'Sapa' : 'Bicara';
+}
+let netTimer = 0, started = false, hudTimer = 0, rainTick = 0;
+function lifeCtx() {
+  const up = player.pos.clone().normalize();
+  return { pos: player.pos, up, speed: player.vT.length(), hour: time.hour, night: nightness(time.hour), sunDir: skyMat.uniforms.sunDir.value, headPos: player.pos.clone().addScaledVector(up, 1.1), speaker: ui.dialogOpen ? ui.speaker.split(' · ')[0] : '', started };
+}
+const RAIN_COL = new THREE.Color('#8794a0');
 function frame() {
+  renderer.info.reset();
   const dt = Math.min(clock.getDelta(), 1 / 20);
   const t = clock.elapsedTime;
   if (started) { time.advance(dt); stats.play += dt; }
@@ -888,13 +991,14 @@ function frame() {
     n.ch.root.visible = vis;
     if (!vis) { n.tag.visible = false; continue; }
     const d = n.pos.distanceTo(player.pos);
-    const want = d < 5 ? player.pos.clone().sub(n.pos) : n.face.clone();
+    const want = d < 5 ? player.pos.clone().sub(n.pos) : n.walkV > 0.12 ? n.heading.clone() : n.face.clone();
     want.addScaledVector(n.up, -want.dot(n.up)).normalize();
     n.look.lerp(want, 1 - Math.exp(-3 * dt)).normalize();
     n.ch.place(n.pos, n.up, n.look);
     if (d < 5 && !n.near) { n.near = true; n.ch.startWave(); }
     if (d > 9) n.near = false;
-    n.ch.update(dt, { speed: 0, grounded: true, look: d < 6 ? headPos : null, talking: ui.dialogOpen && ui.speaker === n.name && ui.typing < ui.full.length });
+    n.ch.setShadow(!lowQ || d < 7);
+    n.ch.update(dt, { speed: n.walkV, grounded: true, look: d < 6 ? headPos : null, talking: ui.dialogOpen && ui.speaker === n.name && ui.typing < ui.full.length });
     blob(n.pos, n.up, 0.9);
     n.tag.visible = d > 2.6 && d < 8;
     if (n.tag.visible) n.tag.position.copy(n.pos).addScaledVector(n.up, RESIDENTS[n.id].look.kid ? 1.6 : 1.95);
@@ -930,7 +1034,11 @@ function frame() {
     if (f.t > 2.2) { scene.remove(f.s); floaters.splice(i, 1); }
   }
 
-  world.updateLife(t, dt, nightness(time.hour));
+  const nightK = nightness(time.hour);
+  life.update(dt, t, lifeCtx());
+  world.updateLife(t, dt, nightK, { pos: player.pos, speed: player.vT.length() });
+  checkDiscover(dt);
+  if (music && (rainTick -= dt) <= 0) { rainTick = 0.25; music.setRain(life.rain); }
   updateConfetti(dt);
   updateSmoke(dt, nightness(time.hour));
 
@@ -944,13 +1052,14 @@ function frame() {
   const sunDir = up.clone().multiplyScalar(Math.sin(el)).addScaledVector(sref, Math.cos(el)).normalize();
   sun.position.copy(player.pos).addScaledVector(sunDir, 60);
   sun.target.position.copy(player.pos);
-  sun.color.copy(lt.sunC); sun.intensity = lt.sunI;
-  hemi.color.copy(lt.hSky); hemi.groundColor.copy(lt.hGround); hemi.intensity = lt.hI;
+  const rn = life.rain;
+  sun.color.copy(lt.sunC); sun.intensity = lt.sunI * (1 - 0.55 * rn);
+  hemi.color.copy(lt.hSky); hemi.groundColor.copy(lt.hGround); hemi.intensity = lt.hI * (1 - 0.1 * rn);
   hemi.position.copy(up);
-  scene.fog.color.copy(lt.fog);
-  skyMat.uniforms.top.value.copy(lt.top); skyMat.uniforms.horizon.value.copy(lt.hor);
+  scene.fog.color.copy(lt.fog).lerp(RAIN_COL, rn * 0.65); scene.fog.near = 45 - rn * 22; scene.fog.far = 150 - rn * 70;
+  skyMat.uniforms.top.value.copy(lt.top).lerp(RAIN_COL, rn * 0.6); skyMat.uniforms.horizon.value.copy(lt.hor).lerp(RAIN_COL, rn * 0.7);
   skyMat.uniforms.upv.value.copy(up); skyMat.uniforms.sunDir.value.copy(sunDir);
-  skyMat.uniforms.sunCol.value.copy(lt.sunC).multiplyScalar(1 - night);
+  skyMat.uniforms.sunCol.value.copy(lt.sunC).multiplyScalar((1 - night) * (1 - rn));
   stars.material.opacity = night * 0.9;
   world.setNight(night);
   LOOK.rim.value.copy(lt.sunC).multiplyScalar(0.7 * (1 - night)).add(new THREE.Color('#6f7fb8').multiplyScalar(0.35 * night));
@@ -1001,22 +1110,20 @@ function frame() {
     } else $('compass').hidden = true;
     renderCard();
     if (focus && !ui.dialogOpen && started) {
-      const tgtAt = targetOfStage();
-      const isT = tgtAt === `${focus.kind}:${focus.id}`;
-      let verb = 'Bicara';
-      if (focus.kind === 'npc' && focus.id === 'harjo' && !quest.has && currentLetter()) verb = 'Ambil surat';
-      else if (isT) verb = focus.kind === 'item' ? 'Ambil' : currentLetter()?.stages[quest.stage + 1] ? 'Tunjukkan surat' : 'Antar surat';
-      else if (focus.kind === 'poi' || focus.kind === 'item') verb = 'Lihat';
       $('prompt').hidden = false;
-      $('promptKey').textContent = usingPad() ? 'X' : isTouch ? 'E' : 'E';
-      $('promptText').textContent = `${verb} · ${focus.label}`;
+      $('promptKey').textContent = usingPad() ? 'X' : isTouchUI() ? '👆' : 'E';
+      $('promptText').textContent = `${actionVerb(focus)} · ${focus.label}`;
     } else $('prompt').hidden = true;
     if (toastT > 0) { toastT -= 0.1; if (toastT <= 0) $('toast').hidden = true; }
     $('netStatus').textContent = `Ghost: ${net.mode}${ghosts.size ? ` · ${ghosts.size} kurir lain` : ''}${pad.connected ? ' · 🎮' : ''}`;
     $('dlgMore').textContent = usingPad() ? 'Ⓐ untuk lanjut' : 'E / klik untuk lanjut';
     if (!$('settings').hidden) { $('nowPlaying').textContent = music ? music.nowPlaying : 'Musik mulai setelah menekan Mulai'; $('padStatus').textContent = pad.connected ? `Terhubung: ${pad.id.slice(0, 48)}` : 'Belum ada joystick. Colok USB / sambungkan Bluetooth lalu tekan tombol apa saja.'; }
-    if (!$('map').hidden) drawMap();
+    drawMini();
+    if (!$('map').hidden && !mapUI.follow) drawBig();
+    if (isTouchUI()) touch.setAction(focus && !ui.dialogOpen && started ? actionVerb(focus) : 'Aksi', !!focus && !ui.dialogOpen && started);
+    document.body.classList.toggle('dialog-open', ui.dialogOpen);
   }
+  if (!$('map').hidden && mapUI.follow && (mapUI.acc -= dt) <= 0) { mapUI.acc = 0.25; drawBig(); }
   // penanda tujuan
   const tp = targetPos(targetOfStage());
   marker.visible = !!(showMarker && tp && started);
@@ -1038,9 +1145,6 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   if (composer) composer.setSize(w, h);
-  const mc = $('mapCanvas');
-  const mw = Math.min(w - 48, 880);
-  mc.width = mw; mc.height = Math.round(mw / 2);
 }
 addEventListener('resize', resize);
 resize();
@@ -1056,7 +1160,8 @@ $('startForm').addEventListener('submit', (e) => {
   player.name = sanitizeText($('startName').value, 20) || player.name;
   $('title').hidden = true;
   $('hud').hidden = false;
-  if (isTouch) $('touch').hidden = false;
+  if (isTouch) touch.show();
+  if (isTouchUI()) touch.keepAwake();
   started = true;
   save();
   if (!quest.has && quest.idx === 0 && !quest.stickers.length) setTimeout(() => say('Pak Harjo', [`Selamat datang, ${player.name}. Kantor pos ini tinggal menunggu seratus surat terakhir.`, 'Mampir ke saya di depan pintu kalau sudah siap. Tekan E untuk bicara.']), 400);
@@ -1073,11 +1178,12 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+setTimeout(() => maps.bake(), 400);
 requestAnimationFrame(frame);
 
 // ================================================================ API uji coba (dipakai tests/smoke.mjs)
 window.KP = {
-  ready: true, buildMs, world, player, quest, time, npcs, renderer, LETTERS,
+  ready: true, scene, buildMs, world, player, quest, time, npcs, renderer, LETTERS, life, maps, discovered, touch, joy,
   info() {
     return {
       calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geometries: renderer.info.memory.geometries,
@@ -1122,5 +1228,11 @@ window.KP = {
   character: () => ({ lid: +playerCh.lids.rotation.x.toFixed(2), squash: +playerCh.sq.toFixed(3), armR: +playerCh.armR.rotation.x.toFixed(2), celebrate: playerCh.celebrate > 0 }),
   confetti: () => confP.filter((c) => c.life > 0).length,
   night: () => nightness(time.hour),
+  camDist: () => +cam.dist.toFixed(2),
+  /** majukan simulasi kehidupan (warga, hewan, cuaca, pancing) tanpa menggambar */
+  stepLife(seconds) { const n = Math.round(seconds * 20); for (let i = 0; i < n; i++) life.update(1 / 20, clock.elapsedTime + i / 20, lifeCtx()); },
+  focusInfo: () => focus && { kind: focus.kind, id: focus.id, label: focus.label },
+  look: () => ({ npcs: Object.values(npcs).map((n) => JSON.stringify(RESIDENTS[n.id].look)), walkers: life.walkers.map((w) => JSON.stringify(w.def.look)) }),
+  screenOf(id) { const it = npcs[id]; const v = it.pos.clone().addScaledVector(it.up, 1.0).project(camera); return { x: (v.x * 0.5 + 0.5) * innerWidth, y: (-v.y * 0.5 + 0.5) * innerHeight }; },
   closeDialog() { let n = 0; while (ui.dialogOpen && n++ < 20) { ui.typing = ui.full.length; advanceDialog(); } },
 };

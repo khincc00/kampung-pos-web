@@ -385,6 +385,29 @@ export class Music {
   }
 
   // ---------------- SFX bernada (tetap bernuansa gamelan/angklung)
+  _tone(t, d, f0, f1, dur, type = 'sine', vel = 0.15) {
+    const o = this.ctx.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0005, t + dur);
+    o.connect(g).connect(d); o.start(t); o.stop(t + dur + 0.05);
+  }
+  _noiseBurst(t, d, freq, q, dur, vel) {
+    const s = this.ctx.createBufferSource(); s.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = freq; f.Q.value = q;
+    const g = this.ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vel, t + 0.01); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    s.connect(f).connect(g).connect(d); s.start(t); s.stop(t + dur + 0.05);
+  }
+  /** hujan: derau berlapis, level 0..1 (dipanggil tiap frame dengan nilai halus) */
+  setRain(level) {
+    if (!this.rain) {
+      const s = this.ctx.createBufferSource(); s.buffer = this.noise; s.loop = true;
+      const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 0.4;
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      s.connect(f).connect(g).connect(this.ambBus); s.start();
+      this.rain = { g };
+    }
+    this.rain.g.gain.setTargetAtTime(level * 0.5, this.ctx.currentTime, 0.4);
+  }
   sfx(kind) {
     const t = this.ctx.currentTime + 0.01, d = this.sfxBus;
     if (kind === 'pick') [n('C5'), n('E5'), n('G5')].forEach((f, i) => this.angklungShake(f, t + i * 0.09, d, 0.18, 0.4));
@@ -393,6 +416,15 @@ export class Music {
     if (kind === 'land') this.kendang('dhe', t, d, 0.3);
     if (kind === 'talk') this.hit('peking', slendro([1, 2, 3, 5, 6][Math.floor(Math.random() * 5)], 1), t, d, 0.09);
     if (kind === 'ui') this.kendang('ket', t, d, 0.4);
+    if (kind === 'meow') this._tone(t, d, 520 + Math.random() * 120, 880, 0.32, 'triangle', 0.16);
+    if (kind === 'purr') this._noiseBurst(t, d, 90, 0.9, 0.05, 6);
+    if (kind === 'kentongan') [0, 0.16, 0.32, 0.6, 0.76].forEach((o) => { this.kendang('tak', t + o, d, 0.45); this._tone(t + o, d, 330, 300, 0.12, 'square', 0.05); });
+    if (kind === 'gong') { this.hit('kempul', slendro(1, -3), t, d, 0.8); this._tone(t, d, 110, 100, 1.8, 'sine', 0.3); }
+    if (kind === 'splash') this._noiseBurst(t, d, 1400, 0.25, 0.25, 0.8);
+    if (kind === 'sip') this._tone(t, d, 700, 500, 0.18, 'sine', 0.1);
+    if (kind === 'bell') [0, 0.12].forEach((o) => this._tone(t + o, d, 2400, 2350, 0.25, 'sine', 0.12));
+    if (kind === 'heart') [0, 0.1].forEach((o, i) => this._tone(t + o, d, 660 + i * 220, 700 + i * 220, 0.16, 'sine', 0.13));
+    if (kind === 'coin') [0, 0.08].forEach((o, i) => this._tone(t + o, d, 1200 + i * 400, 1200 + i * 400, 0.14, 'square', 0.05));
     if (kind === 'wind') {
       const s = this.ctx.createBufferSource(); s.buffer = this.noise; s.loop = true;
       const f = this.ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 0.8;
