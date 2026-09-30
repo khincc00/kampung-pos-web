@@ -186,7 +186,7 @@ export function createLife(opts) {
       w.tag.visible = vis && d > 2.6 && d < 9 && !w.bubble;
       if (!vis) { w.walkV = 0; continue; }
       w.ch.pop = clamp(w.fade, 0, 1);
-      w.ch.setShadow(d < (opts.lowQ ? 0 : 15));
+      w.ch.setShadow(d < (opts.lowQ ? 0 : 10));
       w.ch.place(w.pos, w.up, w.heading);
       w.walkV = damp(w.walkV, speed, 8, dt);
       w.ch.update(dt, { speed: w.walkV, grounded: true, look: d < 6 ? headPos : null, talking: talkingToMe });

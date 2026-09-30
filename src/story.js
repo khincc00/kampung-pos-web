@@ -136,7 +136,7 @@ export function makeAmbient(count = 22) {
       skin: pick(r, SKINS), headColor: pick(r, HAIR_COLORS), head, outfit, pants: outfit === 'seragam' ? (K.kid && isF ? '#d9483b' : '#d9483b') : pick(r, PANTS),
       face: K.face ? pick(r, K.face) : (!isF && !K.kid && r() < 0.25 ? ['kumis'] : []),
       s: (K.s || 1) * (K.kid ? 1 : 0.9 + r() * 0.24), w: (K.w || 1) * (0.85 + r() * 0.4), kid: !!K.kid, hold: K.hold, act: K.act, stoop: K.stoop || 0,
-      lash: isF && r() < 0.8, eyes: pick(r, ['normal', 'normal', 'besar', 'sipit']), pita: pick(r, ['#d9483b', '#feca57', '#48dbfb', '#ff9a9e']), beardColor: '#2b1d16', brow: r() < 0.3 ? 'tebal' : undefined, helm: pick(r, ['#d9483b', '#feca57', '#48a6c9', '#1dd1a1']),
+      fem: isF, lash: isF && r() < 0.8, eyes: pick(r, ['normal', 'normal', 'besar', 'sipit']), pita: pick(r, ['#d9483b', '#feca57', '#48dbfb', '#ff9a9e']), beardColor: '#2b1d16', brow: r() < 0.3 ? 'tebal' : undefined, helm: pick(r, ['#d9483b', '#feca57', '#48a6c9', '#1dd1a1']),
     };
     if (head === 'kerudung') look.headColor = pick(r, ['#d9483b', '#3f8f8a', '#feca57', '#ff9a9e', '#9a7fb0', '#fef9ef', '#6aa84f']);
     if (head === 'uban') { look.headColor = '#d9d6cf'; look.beardColor = '#d9d6cf'; }
@@ -274,5 +274,4 @@ export function wrongDoorLine(resident, letter) {
 // Contoh kurir pensiun (NPC JSON dari pemain yang sudah tamat). Ditandai contoh.
 export const SEED_LEGACY = [
   { v: 1, type: 'kurir_pensiun', example: true, name: 'Kurir Contoh A', message: 'Jalan pelan. Oyen suka digaruk di dagu.', shirt: '#48dbfb', dir: [0.17, 0.984, 0.05], chapter: 1, letters: 10, created_at: '2026-09-01T07:00:00Z' },
-  { v: 1, type: 'kurir_pensiun', example: true, name: 'Kurir Contoh B', message: 'Aku nyasar tiga kali. Ternyata itu bagian paling seru.', shirt: '#1dd1a1', dir: [0.706, 0.707, 0.037], chapter: 1, letters: 10, created_at: '2026-09-03T18:30:00Z' },
 ];

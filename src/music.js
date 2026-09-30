@@ -29,43 +29,65 @@ function synthPartials(sr, f, parts, dur, { click = 0.25, attack = 0.002 } = {})
     let env = a, ph = Math.random() * TAU;
     for (let i = 0; i < len; i++) { d[i] += env * Math.sin(ph + w * i); env *= k; }
   }
-  const na = Math.floor(sr * attack), nc = Math.floor(sr * 0.006);
+  // ketukan pemukul: derau pendek yang diredam (lowpass ±3 kHz) & pelan — derau putih mentah terdengar kresek
+  const na = Math.max(1, Math.floor(sr * attack)), nc = Math.floor(sr * 0.005), lpk = 1 - Math.exp((-TAU * 3000) / sr);
+  let lp = 0;
   for (let i = 0; i < len; i++) {
     if (i < na) d[i] *= i / na;
-    if (i < nc) d[i] += (Math.random() * 2 - 1) * click * (1 - i / nc);
+    if (i < nc) { lp += (Math.random() * 2 - 1 - lp) * lpk; d[i] += lp * click * 0.35 * Math.sin((Math.PI * i) / nc); }
   }
   const fade = Math.floor(sr * 0.05);
   for (let i = 0; i < fade; i++) d[len - 1 - i] *= i / fade;
+  return normalize(d, 0.9);
+}
+function normalize(d, to = 1) {
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  if (peak > to) for (let i = 0; i < d.length; i++) d[i] *= to / peak;
   return d;
 }
-// Karplus–Strong: kecapi, cak, cuk, cello pizzicato
+// Karplus–Strong: kecapi, cak, cuk, cello pizzicato.
+// Panjang delay pecahan (allpass) supaya nadanya tepat: delay bulat + filter rata-rata (½ sampel) bikin nada
+// meleset belasan sen dan akor jadi sember.
 function synthKS(sr, f, dur, { damp = 0.996, bright = 0.5, body = 0 } = {}) {
-  const N = Math.max(2, Math.round(sr / f));
+  const P = sr / f - 0.5;                                   // periode total dikurangi delay filter rata-rata
+  const N = Math.max(2, Math.floor(P - 0.1)), frac = P - N, C = (1 - frac) / (1 + frac);
   const ring = new Float32Array(N);
   let prev = 0;
   for (let i = 0; i < N; i++) { const x = Math.random() * 2 - 1; prev = prev + bright * (x - prev); ring[i] = prev; }
+  let mean = 0; for (let i = 0; i < N; i++) mean += ring[i] / N;
+  for (let i = 0; i < N; i++) ring[i] -= mean;             // tanpa DC: tidak ada dengung/pop di awal
   const len = Math.floor(sr * dur);
   const d = new Float32Array(len);
-  let idx = 0;
+  let idx = 0, last = 0, apIn = 0, apOut = 0;
   for (let i = 0; i < len; i++) {
     const y = ring[idx];
     d[i] = y;
-    ring[idx] = damp * 0.5 * (y + ring[(idx + 1) % N]);
+    const lp = damp * 0.5 * (y + last); last = y;
+    apOut = C * lp + apIn - C * apOut; apIn = lp;           // allpass orde-1: sisa delay pecahan
+    ring[idx] = apOut;
     idx = (idx + 1) % N;
   }
-  if (body) for (let i = 0; i < len; i++) d[i] += body * Math.sin((TAU * f * i) / sr) * Math.exp(-i / (sr * 0.25));
+  if (body) for (let i = 0; i < len; i++) d[i] += body * Math.sin((TAU * f * i) / sr) * Math.exp(-i / (sr * 0.25)) * Math.min(1, i / (sr * 0.004));
+  const na = Math.floor(sr * 0.0015);
+  for (let i = 0; i < na; i++) d[i] *= i / na;              // serangan 1,5 ms: tanpa klik
   let peak = 0;
   for (let i = 0; i < len; i++) peak = Math.max(peak, Math.abs(d[i]));
   const fade = Math.floor(sr * 0.04);
-  for (let i = 0; i < len; i++) { d[i] /= peak || 1; if (i > len - fade) d[i] *= (len - i) / fade; }
+  for (let i = 0; i < len; i++) { d[i] *= 0.9 / (peak || 1); if (i > len - fade) d[i] *= (len - i) / fade; }
   return d;
 }
-function makeIR(ctx, seconds = 2.6) {
+function makeIR(ctx, seconds = 2.2) {
   const sr = ctx.sampleRate, len = Math.floor(sr * seconds);
   const b = ctx.createBuffer(2, len, sr);
   for (let c = 0; c < 2; c++) {
     const d = b.getChannelData(c);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3.2 * (i < sr * 0.012 ? 0.3 : 1);
+    let lp = 0;
+    for (let i = 0; i < len; i++) {
+      const k = 1 - Math.exp((-TAU * (5200 - 3800 * (i / len))) / sr);   // ekor gaung makin redup (seperti ruangan kayu), tidak berdesis
+      lp += (Math.random() * 2 - 1 - lp) * k;
+      d[i] = lp * (1 - i / len) ** 3.2 * (i < sr * 0.012 ? 0.3 : 1);
+    }
   }
   return b;
 }
@@ -80,12 +102,12 @@ const RECIPES = {
   kethuk:  { dur: 0.5, parts: [[1, 0.6, 0.18], [2.1, 0.2, 0.07]], click: 0.3 },
   kempul:  { dur: 4.5, parts: [[1, 0.9, 3.2], [1.008, 0.6, 3.0], [2.01, 0.25, 1.2], [2.93, 0.12, 0.6]], click: 0.1, attack: 0.008 },
   gong:    { dur: 8.0, parts: [[1, 1.0, 6.5], [1.011, 0.8, 6.5], [2.0, 0.3, 3.2], [2.93, 0.18, 1.8], [4.1, 0.08, 0.9]], click: 0.05, attack: 0.02 },
-  angklung:{ dur: 0.45, parts: [[1, 0.6, 0.22], [2, 0.32, 0.16], [4, 0.1, 0.09], [2.76, 0.08, 0.06]], click: 0.5, attack: 0.001 },
+  angklung:{ dur: 0.45, parts: [[1, 0.6, 0.22], [2, 0.32, 0.16], [4, 0.1, 0.09], [2.76, 0.08, 0.06]], click: 0.3, attack: 0.002 },
   gender:  { dur: 3.0, parts: [[1, 0.6, 2.2], [1.005, 0.4, 2.0], [3.0, 0.08, 0.6]], click: 0.08, attack: 0.004 },
 };
 const PLUCKS = {
   kecapi: { dur: 2.4, damp: 0.9975, bright: 0.55 },
-  cuk:    { dur: 0.6, damp: 0.985, bright: 0.85 },
+  cuk:    { dur: 0.6, damp: 0.985, bright: 0.65 },
   cak:    { dur: 0.9, damp: 0.99, bright: 0.7 },
   cello:  { dur: 1.2, damp: 0.992, bright: 0.25, body: 0.35 },
   gitar:  { dur: 1.6, damp: 0.994, bright: 0.45 },
@@ -133,8 +155,8 @@ const TRACKS = {
         m.hit('peking', slendro(note, 1), t, d, 0.09);
         const g = beat % 16;
         if (g % 4 === 3) m.hit('kenong', slendro(note, 0), t, d, 0.17);
-        if (g === 5 || g === 9 || g === 13) m.hit('kempul', slendro(note, -2), t, d, 0.3);
-        if (g === 15) m.hit('gong', slendro(note, -3) * 0.95, t, d, 0.6);
+        if (g === 5 || g === 9 || g === 13) m.hit('kempul', slendro(note, -1), t, d, 0.24);
+        if (g === 15) m.hit('gong', slendro(note, -2) * 0.95, t, d, 0.42);
       } else {
         m.hit('peking', slendro(next, 1), t, d, 0.07);
         m.hit('bonang', slendro(next, 0), t, d, 0.09);
@@ -164,7 +186,7 @@ const TRACKS = {
       const r = this.roots[b];
       const v = s % 4 === 0 ? 0.34 : 0.22;
       m.pluck('kecapi', pelog5(r + this.tmpl[s] - 5, 294), t, d, v);
-      if (s === 0 && b % 4 === 0) m.hit('kempul', pelog5(r - 10, 294), t, d, 0.35);
+      if (s === 0 && b % 4 === 0) m.hit('kempul', pelog5(r - 5, 294), t, d, 0.28);
       if (s === 8 && b % 2 === 1) m.hit('gender', pelog5(r + 5, 294), t, d, 0.16);
       for (const [st, idx, len] of this.melody[b]) if (st === s) m.suling(pelog5(idx, 588 / 2), t, len * sd * 0.97, d, 0.55, { bend: true });
     },
@@ -210,10 +232,15 @@ export class Music {
   constructor(ctx, { realtime = true } = {}) {
     this.ctx = ctx;
     this.realtime = realtime;
+    // master → buang < 60 Hz (speaker HP/laptop bergetar pecah) → kompresor lembut → limiter → keluaran di bawah 0 dBFS
+    const hp = [0, 1].map(() => { const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 60; f.Q.value = 0.6; return f; });
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -16; comp.ratio.value = 3; comp.attack.value = 0.01; comp.release.value = 0.25;
-    this.master = ctx.createGain(); this.master.gain.value = 0.9;
-    this.master.connect(comp).connect(ctx.destination);
+    comp.threshold.value = -18; comp.knee.value = 12; comp.ratio.value = 2.5; comp.attack.value = 0.015; comp.release.value = 0.3;
+    const lim = ctx.createDynamicsCompressor();
+    lim.threshold.value = -4; lim.knee.value = 0; lim.ratio.value = 20; lim.attack.value = 0.001; lim.release.value = 0.12;
+    const out = ctx.createGain(); out.gain.value = 0.85;
+    this.master = ctx.createGain(); this.master.gain.value = 0.85;
+    this.master.connect(hp[0]).connect(hp[1]).connect(comp).connect(lim).connect(out).connect(ctx.destination);
     this.musicBus = this._gain(0.6, this.master);
     this.sfxBus = this._gain(0.8, this.master);
     this.ambBus = this._gain(0.35, this.master);
@@ -345,9 +372,9 @@ export class Music {
   }
   kendang(stroke, t, dest, vel = 0.5) {
     const ctx = this.ctx;
-    const env = (g, peak, dec) => { g.gain.setValueAtTime(peak * vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dec); };
+    const env = (g, peak, dec) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak * vel, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, t + dec); };
     if (stroke === 'dhe') {
-      const o = ctx.createOscillator(); o.frequency.setValueAtTime(150, t); o.frequency.exponentialRampToValueAtTime(64, t + 0.14);
+      const o = ctx.createOscillator(); o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(82, t + 0.14);
       const g = ctx.createGain(); env(g, 0.9, 0.42); o.connect(g).connect(dest); o.start(t); o.stop(t + 0.45);
     } else if (stroke === 'tung') {
       const o = ctx.createOscillator(); o.frequency.setValueAtTime(260, t); o.frequency.exponentialRampToValueAtTime(205, t + 0.1);
@@ -411,7 +438,7 @@ export class Music {
   sfx(kind) {
     const t = this.ctx.currentTime + 0.01, d = this.sfxBus;
     if (kind === 'pick') [n('C5'), n('E5'), n('G5')].forEach((f, i) => this.angklungShake(f, t + i * 0.09, d, 0.18, 0.4));
-    if (kind === 'deliver') { [5, 6, 1].forEach((g, i) => this.hit('bonang', slendro(g, g === 1 ? 1 : 0), t + i * 0.16, d, 0.55)); this.hit('kempul', slendro(1, -2), t + 0.5, d, 0.5); }
+    if (kind === 'deliver') { [5, 6, 1].forEach((g, i) => this.hit('bonang', slendro(g, g === 1 ? 1 : 0), t + i * 0.16, d, 0.55)); this.hit('kempul', slendro(1, -1), t + 0.5, d, 0.45); }
     if (kind === 'jump') this.kendang('tak', t, d, 0.25);
     if (kind === 'land') this.kendang('dhe', t, d, 0.3);
     if (kind === 'talk') this.hit('peking', slendro([1, 2, 3, 5, 6][Math.floor(Math.random() * 5)], 1), t, d, 0.09);
@@ -419,7 +446,7 @@ export class Music {
     if (kind === 'meow') this._tone(t, d, 520 + Math.random() * 120, 880, 0.32, 'triangle', 0.16);
     if (kind === 'purr') this._noiseBurst(t, d, 90, 0.9, 0.05, 6);
     if (kind === 'kentongan') [0, 0.16, 0.32, 0.6, 0.76].forEach((o) => { this.kendang('tak', t + o, d, 0.45); this._tone(t + o, d, 330, 300, 0.12, 'square', 0.05); });
-    if (kind === 'gong') { this.hit('kempul', slendro(1, -3), t, d, 0.8); this._tone(t, d, 110, 100, 1.8, 'sine', 0.3); }
+    if (kind === 'gong') { this.hit('kempul', slendro(1, -2), t, d, 0.7); this._tone(t, d, 110, 100, 1.8, 'sine', 0.22); }
     if (kind === 'splash') this._noiseBurst(t, d, 1400, 0.25, 0.25, 0.8);
     if (kind === 'sip') this._tone(t, d, 700, 500, 0.18, 'sine', 0.1);
     if (kind === 'bell') [0, 0.12].forEach((o) => this._tone(t + o, d, 2400, 2350, 0.25, 'sine', 0.12));

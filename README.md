@@ -57,6 +57,11 @@ Getar (rumble) saat surat sampai, bila joystick mendukung.
 Material halus dengan rim light hangat, atap seng metalik, semua tepi membulat (RoundedBox), planet bershading halus, rumput bergoyang (shader), bunga, awan empuk yang bayangannya lewat, ayam kampung mematuk, kupu-kupu, kunang-kunang malam, asap warung, bloom lembut (desktop).
 Karakter: kepala besar, mata berkilau, kedip, pipi merona, squash & stretch, antisipasi sebelum lompat, kepala menoleh ke lawan bicara, warga melambai saat didekati, tas surat memantul, selebrasi + konfeti saat surat sampai.
 
+## Karakter 3D
+- **Kurir & istri** (`assets/kurir.glb`, `assets/istri.glb`, versi `*_hp.glb` untuk HP dan karakter latar): dibuat dari gambar referensi gaya Pixar milik proyek → model 3D (TRELLIS.2) → rig & animasi Mixamo (idle, jalan, lari, lompat). Istri selalu mengikuti kurir menapaki jejaknya.
+- **Warga** (`assets/warga/*.glb`): paket *Ultimate Modular Men/Women* karya [Quaternius](https://quaternius.com), lisensi **CC0 1.0** ([pria](https://poly.pizza/bundle/Ultimate-Modular-Men-Pack-ZiH8muWqwQ), [wanita](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)); hanya model berlabel CC0 di poly.pizza yang dipakai. Animasi dipangkas ke idle/walk/run/wave/interact. Saat dimuat, bagian-bagian tiap model digabung jadi satu mesh berwarna per verteks (1 draw call per warga), diwarnai ulang sesuai ciri warga di `story.js`, dan diberi tutup kepala (kerudung, peci, kopiah, caping, blangkon, helm …) serta kacamata/kumis yang menempel di tulang kepala.
+- Semua model memakai rig bergaya Mixamo/Quaternius; gerak maju di klip dibuang otomatis dan fase jalan↔lari disinkronkan dari posisi kaki. Model gagal dimuat → karakter prosedural lama.
+
 ## Musik (disintesis di browser, tanpa file audio)
 | Waktu | Lagu orisinal | Instrumen |
 |---|---|---|
@@ -93,10 +98,11 @@ src/life.js         warga ramai + jadwal, hewan, burung, layangan, angkot, cuaca
 src/minimap.js      minimap bulat + peta bola (medan dipanggang, denah, penanda, tempat ditemukan)
 src/touch.js        joystick melayang, kamera geser/cubit, tombol, ketuk-untuk-interaksi, layar penuh
 src/music.js        mesin musik gamelan/angklung/keroncong (WebAudio)
-vendor/addons/      RoundedBox, BufferGeometryUtils, bloom (Three.js r160)
+vendor/addons/      RoundedBox, BufferGeometryUtils, SkeletonUtils, GLTFLoader, bloom (Three.js r160)
+assets/             model 3D kurir, istri, warga (GLB)
 vendor/three.module.min.js   Three.js r160 (lokal, untuk offline)
 sw.js, manifest.webmanifest, icons/   PWA
 supabase/schema.sql
 tests/smoke.mjs
 ```
-Ukuran total ±900 KB (target < 50 MB).
+Ukuran game ±14 MB termasuk model 3D (tanpa `docs/`; target < 50 MB).

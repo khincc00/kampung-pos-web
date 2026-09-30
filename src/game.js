@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { R, WATER, buildWorld, heightAt, frameAt, surfacePoint, DISTRICT_DEF, prefab, softMat, LOOK } from './world.js';
-import { Character } from './characters.js';
+import { Character, loadHero, loadWarga, wargaBaseFor } from './characters.js';
 import { Music, trackTitle, TRACK_KEYS } from './music.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -211,9 +211,76 @@ const player = {
   walkPhase: 0, squash: 0, onCollider: null, name: 'Kurir',
 };
 player.pos.normalize().multiplyScalar(R + heightAt(player.pos.clone().normalize()) + 0.2);
-const LOOK_PLAYER = { shirt: '#ff7a3d', skin: '#c68b5e', head: 'pos', headColor: '#c45a2c', pants: '#3f5f7a' };
+const LOOK_PLAYER = {
+  shirt: '#b8cde6', outfit: 'kemeja', sleeve: 'gulung', skin: '#d29a6c', head: 'jambul', headColor: '#161210',
+  pants: '#3d5577', shoes: '#7a4424', face: ['goatee', 'bintik', 'senyum'], beardColor: '#161210', brow: 'tebal', eyes: 'besar',
+};
 const playerCh = new Character(LOOK_PLAYER, { player: true, courier: true });
 scene.add(playerCh.root);
+// model kurir 3D (assets/kurir.glb). Sampai termuat (atau kalau gagal) kurir tetap prosedural.
+let hero = null;
+const heroWait = [];
+let heroLite = null;              // versi ringan: kurir pensiun, ghost, dan pemain di HP
+const heroFor = (ch, opts = {}) => { const h = opts.lite ? heroLite : hero; if (h) ch.useHero(h, opts); else heroWait.push([ch, opts]); return ch; };
+heroFor(playerCh, { lite: lowQ });
+Promise.all([lowQ ? null : loadHero('./assets/kurir.glb'), loadHero('./assets/kurir_hp.glb')]).then(([full, lite]) => {
+  heroLite = lite; hero = full || lite;
+  for (const [ch, opts] of heroWait.splice(0)) ch.useHero(opts.lite ? heroLite : hero, opts);
+}).catch((e) => console.warn('model kurir tidak termuat, pakai karakter prosedural', e));
+
+// warga 3D (paket Quaternius, CC0): tiap warga cerita & warga ramai memakai model dasar terdekat, diwarnai ulang
+// sesuai cirinya + tutup kepala. Model dasar dimuat sekali; gagal → warga tetap prosedural.
+{
+  const people = [...Object.values(npcs).map((n) => [n.ch, { ...RESIDENTS[n.id].look, act: n.act }]), ...life.walkers.map((w) => [w.ch, w.def.look])];
+  const need = [...new Set(people.map(([, look]) => wargaBaseFor(look)))];
+  const bases = {};
+  Promise.all(need.map((k) => loadWarga(`./assets/warga/${k}.glb`).then((b) => { bases[k] = b; }).catch((e) => console.warn('warga', k, e))))
+    .then(() => { for (const [ch, look] of people) { const b = bases[wargaBaseFor(look)]; if (b) ch.useWarga(b, look); } });
+}
+
+// istri kurir: selalu ikut di belakang, menapaki jejak yang sama (atap, drum, dermaga ikut terlewati)
+const LOOK_ISTRI = {
+  shirt: '#7f97c2', outfit: 'rompi', accent: '#f2ecdc', skin: '#d6a47c', head: 'kerudung', headColor: '#8a7e74',
+  pants: '#8aa6cc', shoes: '#7a4a2e', face: ['kacamata'], frame: '#b9b2aa', lash: true, s: 0.95, w: 0.92,
+};
+const wife = { ch: new Character(LOOK_ISTRI, { player: true }), pos: V3(), fwd: V3(0, 0, 1), crumbs: [], speed: 0, placed: false, grounded: true };
+scene.add(wife.ch.root);
+loadHero(lowQ ? './assets/istri_hp.glb' : './assets/istri.glb', 1.34).then((h) => wife.ch.useHero(h, { shadow: !lowQ })).catch(() => {});   // HP: versi ringan; gagal → tetap prosedural
+const WIFE_GAP = 1.5;
+function wifeSnap() {   // muncul di belakang kurir (awal main, teleport, atau tertinggal jauh)
+  const d = player.pos.clone().addScaledVector(player.fwd, -WIFE_GAP).normalize();
+  // menapak: di tanah, atau setinggi kurir kalau kurir sedang berdiri di atap/drum (bukan saat kurir melayang)
+  wife.pos.copy(d).multiplyScalar(player.grounded ? Math.max(R + heightAt(d), player.pos.length()) : R + heightAt(d));
+  wife.fwd.copy(player.fwd); wife.crumbs.length = 0; wife.speed = 0; wife.placed = true; wife.grounded = true;
+}
+function stepWife(dt) {
+  if (!wife.placed) wifeSnap();
+  const C = wife.crumbs, last = C[C.length - 1];
+  if (!last || last.p.distanceTo(player.pos) > 0.15) C.push({ p: player.pos.clone(), g: player.grounded });
+  let len = C.length ? wife.pos.distanceTo(C[0].p) : 0;
+  for (let i = 1; i < C.length; i++) len += C[i - 1].p.distanceTo(C[i].p);
+  if (len > 14 || C.length > 400) { wifeSnap(); return; }
+  // kejar jejak: makin tertinggal makin cepat, berhenti saat jaraknya pas
+  const want = THREE.MathUtils.clamp((len - WIFE_GAP) * 3.2, 0, K.RUN * 1.15);
+  wife.speed += (want - wife.speed) * (1 - Math.exp(-(want > wife.speed ? 6 : 10) * dt));
+  let step = wife.speed * dt;
+  const prev = wife.pos.clone();
+  while (step > 0 && C.length) {
+    const d = wife.pos.distanceTo(C[0].p);
+    if (d <= step) { wife.pos.copy(C[0].p); wife.grounded = C[0].g; step -= d; C.shift(); }
+    else { wife.pos.lerp(C[0].p, step / d); step = 0; }
+  }
+  const up = wife.pos.clone().normalize();
+  const mv = wife.pos.clone().sub(prev); mv.addScaledVector(up, -mv.dot(up));
+  const face = mv.lengthSq() > 1e-6 && wife.speed > 0.3 ? mv.normalize() : player.pos.clone().sub(wife.pos).addScaledVector(up, -player.pos.clone().sub(wife.pos).dot(up)).normalize();
+  if (face.lengthSq() > 0.5) wife.fwd.lerp(face, 1 - Math.exp(-8 * dt)).addScaledVector(up, -wife.fwd.dot(up)).normalize();
+  // status menapak = jejak terakhir yang benar-benar dilewati (jejak di depan bisa basi, mis. kurir jatuh saat spawn)
+  if (wife.speed < 0.05) wife.grounded = true;
+  const grounded = wife.grounded;
+  wife.ch.place(wife.pos, up, wife.fwd);
+  wife.ch.update(dt, { speed: wife.speed, grounded, look: wife.speed < 0.5 ? player.pos.clone().addScaledVector(player.pos.clone().normalize(), 1.1) : null });
+  blob(wife.pos.clone().addScaledVector(up, -Math.max(0, wife.pos.length() - (R + heightAt(up)))), up, grounded ? 0.85 : 0.6);
+}
 const K = { WALK: 4.3, RUN: 6.8, ACC_G: 14, ACC_A: 4.5, G: 22, JUMP: 8.4, RAD: 0.35, H: 1.3, STEP: 0.5, SNAP: 0.28 };
 
 const cam = { f: world.spots['door:kantor_pos'].face.clone().negate(), pitch: 0.42, dist: 7.6, pos: V3(), lastDrag: -10, sunRef: null }; // menghadap Kantor Pos
@@ -617,7 +684,7 @@ net.on('pos', (d) => {
   if (!Array.isArray(d.p) || !Array.isArray(d.f)) return;
   let g = ghosts.get(d.id);
   if (!g) {
-    const ch = new Character({ ...LOOK_PLAYER, shirt: /^#[0-9a-f]{6}$/i.test(d.s) ? d.s : '#48dbfb' }, { player: true, courier: true, ghost: true });
+    const ch = heroFor(new Character({ ...LOOK_PLAYER, shirt: /^#[0-9a-f]{6}$/i.test(d.s) ? d.s : '#48dbfb' }, { player: true, courier: true, ghost: true }), { ghost: true, lite: true });
     const tag = textSprite(sanitizeText(d.n, 20) || 'Kurir', { size: 24, bg: 'rgba(59,42,32,0.55)', fg: '#fef9ef' });
     scene.add(ch.root, tag);
     g = { ch, mesh: ch.root, tag, pos: V3().fromArray(d.p), tpos: V3(), f: V3(0, 0, 1), tf: V3(0, 0, 1), seen: 0, prev: V3().fromArray(d.p) };
@@ -636,7 +703,7 @@ function spawnLegacy(o) {
   const dir = V3(...o.dir).normalize();
   const f = frameAt(dir);
   const pos = dir.clone().multiplyScalar(R + heightAt(dir));
-  const ch = new Character({ ...LOOK_PLAYER, shirt: o.shirt }, { courier: true });
+  const ch = heroFor(new Character({ ...LOOK_PLAYER, shirt: o.shirt }, { player: true, courier: true }), { shadow: false, lite: true });
   ch.place(pos, dir, f.north);
   const mesh = ch.root;
   const tag = textSprite(o.name + (o.example ? ' · contoh' : ''), { size: 24 });
@@ -983,6 +1050,7 @@ function frame() {
   const lookTarget = focus && focus.pos.distanceTo(player.pos) < 4 ? focus.pos.clone().addScaledVector(up, 1.1) : null;
   playerCh.update(dt, { speed: player.vT.length(), grounded: player.grounded, vUp: player.vUp, prep: player.prep ? 1 - player.prep / 0.07 : 0, look: lookTarget });
   blob(player.pos.clone().addScaledVector(up, -Math.max(0, player.pos.length() - (R + heightAt(up)))), up, player.grounded ? 0.95 : 0.7);
+  stepWife(dt);
 
   // NPC: hanya yang di sisi planet yang terlihat; menoleh, melambai, bicara, kedip
   const headPos = player.pos.clone().addScaledVector(up, 1.1);
@@ -997,11 +1065,11 @@ function frame() {
     n.ch.place(n.pos, n.up, n.look);
     if (d < 5 && !n.near) { n.near = true; n.ch.startWave(); }
     if (d > 9) n.near = false;
-    n.ch.setShadow(!lowQ || d < 7);
+    n.ch.setShadow(d < (lowQ ? 7 : 10));
     n.ch.update(dt, { speed: n.walkV, grounded: true, look: d < 6 ? headPos : null, talking: ui.dialogOpen && ui.speaker === n.name && ui.typing < ui.full.length });
     blob(n.pos, n.up, 0.9);
     n.tag.visible = d > 2.6 && d < 8;
-    if (n.tag.visible) n.tag.position.copy(n.pos).addScaledVector(n.up, RESIDENTS[n.id].look.kid ? 1.6 : 1.95);
+    if (n.tag.visible) { const lk = RESIDENTS[n.id].look; n.tag.position.copy(n.pos).addScaledVector(n.up, (lk.kid ? 1.6 : 2.15) * (lk.s || 1)); }
   }
   for (const g of legacy) {
     const vis = g.up.dot(up) > 0.45;
@@ -1183,7 +1251,7 @@ requestAnimationFrame(frame);
 
 // ================================================================ API uji coba (dipakai tests/smoke.mjs)
 window.KP = {
-  ready: true, scene, buildMs, world, player, quest, time, npcs, renderer, LETTERS, life, maps, discovered, touch, joy,
+  ready: true, scene, buildMs, world, player, playerCh, wife, quest, time, npcs, renderer, LETTERS, life, maps, discovered, touch, joy,
   info() {
     return {
       calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geometries: renderer.info.memory.geometries,

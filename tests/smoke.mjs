@@ -18,7 +18,8 @@ let offline = false;
 page.on('console', (m) => { const u = m.location()?.url || ''; if (m.type() === 'error' && !offline && !/ERR_TUNNEL|fonts\.g/.test(m.text() + u)) errors.push(m.text() + ' @ ' + u); });
 
 async function start(p, name) {
-  await p.goto(URL, { timeout: 180000 });
+  // jangan tunggu event "load": font Google yang diblokir sandbox bisa menggantung; kesiapan game dicek lewat KP.ready
+  await p.goto(URL, { timeout: 180000, waitUntil: 'domcontentloaded' });
   await p.waitForFunction(() => window.KP?.ready, null, { timeout: 180000 });
   await p.fill('#startName', name);
   await p.click('#btnStart');
@@ -228,6 +229,9 @@ console.log('\n=== 11. Musik latar Indonesia (WebAudio) ===');
 
 console.log('\n=== 12. Joystick eksternal (Gamepad API, disimulasikan) ===');
 {
+  // SwiftShader: GPU proses dipakai bersama semua konteks — selama konteks WebGL tab utama hidup (walau dibekukan),
+  // kompilasi shader tab kedua merayap > 3 menit. Tutup dulu game di tab utama, jalankan lagi sesudahnya.
+  await page.goto('about:blank');
   const gctx = await browser.newContext({ viewport: { width: 1280, height: 720 } });
   await gctx.addInitScript(() => {
     window.__pad = { id: 'Simulasi Xbox Controller (STANDARD GAMEPAD)', index: 0, connected: true, mapping: 'standard', axes: [0, 0, 0, 0],
@@ -258,6 +262,7 @@ console.log('\n=== 12. Joystick eksternal (Gamepad API, disimulasikan) ===');
   ok((await info(gp)).dialog, 'tombol X = bicara dengan Pak Harjo');
   ok(/Ⓐ/.test(await gp.textContent('#dlgMore')), 'petunjuk tombol berganti ke joystick (Ⓐ)');
   await gctx.close();
+  await start(page, 'Kurir');
 }
 
 console.log('\n=== 13. Animasi karakter ===');
