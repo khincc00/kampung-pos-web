@@ -1,5 +1,5 @@
 // Service worker: offline setelah load pertama. Naikkan VERSION tiap rilis.
-const VERSION = 'kp-v1.6.2';
+const VERSION = 'kp-v1.6.3';
 const SHELL = [
   './', './index.html', './config.js', './manifest.webmanifest',
   './src/game.js', './src/world.js', './src/story.js', './src/net.js',

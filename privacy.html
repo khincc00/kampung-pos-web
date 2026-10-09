@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kebijakan Privasi · Kampung Pos</title>
+<meta name="description" content="Kebijakan privasi game Kampung Pos.">
+<link rel="icon" href="icons/icon.svg">
+<style>
+  :root { --bg: #fbf3e8; --fg: #3b302b; --muted: #6f625a; --accent: #c4501c; --card: #fffaf3; --line: #ead9c4; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #1f1a17; --fg: #f1e6da; --muted: #bba99a; --accent: #ff9a6a; --card: #2a231f; --line: #3d332d; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 1.8rem; margin: 0 0 4px; }
+  h2 { font-size: 1.15rem; margin: 32px 0 8px; color: var(--accent); }
+  p, li { margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 0.92rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin: 16px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 0.95rem; }
+  th, td { text-align: left; vertical-align: top; padding: 8px; border-bottom: 1px solid var(--line); }
+  a { color: var(--accent); }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0 24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Kebijakan Privasi Kampung Pos</h1>
+  <p class="muted">Berlaku sejak 9 Oktober 2026</p>
+
+  <div class="card">
+    <strong>Ringkasnya:</strong> Kampung Pos tidak meminta akun, tidak menampilkan iklan, tidak memakai pelacak analitik,
+    dan tidak menjual data. Nama kurir dan progres permainanmu disimpan di perangkatmu sendiri.
+  </div>
+
+  <h2>1. Data yang disimpan di perangkatmu</h2>
+  <p>Agar permainan bisa dilanjutkan, game menyimpan data berikut di penyimpanan lokal (local storage) perangkatmu.
+    Data ini tidak dikirim ke server kami.</p>
+  <ul>
+    <li>Nama kurir yang kamu ketik saat mulai bermain.</li>
+    <li>Progres permainan: surat yang sudah diantar, stiker, tempat yang sudah ditemukan, posisi kurir, dan jam di dunia game.</li>
+    <li>Pesan "kurir pensiun" yang kamu tulis saat menamatkan Bagian 1.</li>
+  </ul>
+  <p>Tombol <em>Ulang dari awal</em> di dalam game menghapus progres permainan. Untuk menghapus semuanya (termasuk pesan kurir pensiun di perangkat), hapus data aplikasi lewat pengaturan Android.</p>
+
+  <h2>2. Fitur bersama (opsional)</h2>
+  <p>Kampung Pos punya fitur "ghost" (melihat kurir lain berjalan) dan "kurir pensiun" (pesan dari pemain yang sudah tamat muncul di dunia pemain lain).
+    Bila fitur bersama ini aktif, data berikut dikirim melalui layanan <a href="https://supabase.com/privacy" rel="noopener">Supabase</a>:</p>
+  <table>
+    <tr><th>Data</th><th>Untuk apa</th><th>Disimpan?</th></tr>
+    <tr><td>Posisi & arah kurir di dunia game, warna baju, emoji yang kamu kirim, ID acak sesi</td><td>Menampilkan ghost-mu di layar pemain lain</td><td>Tidak, hanya diteruskan secara langsung</td></tr>
+    <tr><td>Nama kurir (maks. 20 huruf), pesan kurir pensiun (maks. 100 huruf), jumlah surat, warna baju</td><td>Menampilkan kurir pensiun di dunia pemain lain</td><td>Ya, sampai kamu meminta penghapusan</td></tr>
+  </table>
+  <p>Data ini tidak terhubung dengan identitas aslimu, email, atau nomor telepon. Jangan menulis data pribadi (nama lengkap, alamat, nomor HP) di nama atau pesan kurir.</p>
+
+  <h2>3. Layanan pihak ketiga</h2>
+  <ul>
+    <li><strong>Google Fonts</strong>: huruf tampilan game dimuat dari server Google, sehingga Google dapat menerima alamat IP perangkatmu. Lihat <a href="https://policies.google.com/privacy" rel="noopener">Kebijakan Privasi Google</a>.</li>
+    <li><strong>Penyedia hosting</strong> situs game dapat mencatat log akses standar (alamat IP, waktu, jenis browser) untuk keamanan dan keandalan layanan.</li>
+    <li><strong>jsDelivr</strong>: pustaka fitur bersama dimuat dari CDN jsDelivr bila fitur bersama aktif.</li>
+  </ul>
+
+  <h2>4. Izin aplikasi</h2>
+  <p>Aplikasi Android Kampung Pos hanya membutuhkan akses internet. Game tidak mengakses kamera, mikrofon, lokasi, kontak, atau berkas di perangkatmu.</p>
+
+  <h2>5. Anak-anak</h2>
+  <p>Kampung Pos cocok untuk semua umur dan tidak dengan sengaja mengumpulkan data pribadi anak. Bila kamu orang tua dan yakin anakmu menulis data pribadi di pesan kurir pensiun, hubungi kami agar pesan itu dihapus.</p>
+
+  <h2>6. Penghapusan data</h2>
+  <p>Untuk menghapus pesan kurir pensiun yang tersimpan di server, kirim email ke alamat di bawah dengan menyebutkan nama kurir dan isi pesanmu. Kami menghapusnya dalam 30 hari.</p>
+
+  <h2>7. Perubahan kebijakan</h2>
+  <p>Bila kebijakan ini berubah, versi terbaru akan dipasang di halaman ini dengan tanggal berlaku yang baru.</p>
+
+  <h2>8. Kontak</h2>
+  <p>Pertanyaan tentang privasi: <a href="mailto:master@khincreator.com">master@khincreator.com</a></p>
+
+  <hr>
+  <p class="muted">Kampung Pos · game antar surat cozy di planet kampung Indonesia.</p>
+</main>
+</body>
+</html>

@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.khincc.kampungpos",
+      "sha256_cert_fingerprints": [
+        "GANTI_DENGAN_SHA256_KUNCI_UPLOAD_DARI_PWABUILDER",
+        "GANTI_DENGAN_SHA256_APP_SIGNING_DARI_PLAY_CONSOLE"
+      ]
+    }
+  }
+]
