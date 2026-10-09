@@ -3,10 +3,9 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.khincc.kampungpos",
+      "package_name": "com.khincreator.kampungpos.twa",
       "sha256_cert_fingerprints": [
-        "GANTI_DENGAN_SHA256_KUNCI_UPLOAD_DARI_PWABUILDER",
-        "GANTI_DENGAN_SHA256_APP_SIGNING_DARI_PLAY_CONSOLE"
+        "9B:7F:17:0C:46:A6:27:0B:8B:F5:CA:F7:57:72:EE:79:53:BA:1D:01:5D:FE:88:9F:12:2E:45:5F:21:33:01:67"
       ]
     }
   }
